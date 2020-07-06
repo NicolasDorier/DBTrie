@@ -9,7 +9,6 @@ namespace DBTrie
 	{
 		ValueTask Read(long offset, Memory<byte> output);
 		ValueTask Write(long offset, ReadOnlyMemory<byte> input);
-		ValueTask<long> WriteToEnd(ReadOnlyMemory<byte> input);
 		ValueTask Flush();
 		public long Length { get; }
 	}

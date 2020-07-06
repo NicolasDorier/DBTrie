@@ -44,14 +44,6 @@ namespace DBTrie
 			await _fsData.WriteAsync(input);
 		}
 
-		public async ValueTask<long> WriteToEnd(ReadOnlyMemory<byte> input)
-		{
-			_fsData.Seek(0, SeekOrigin.End);
-			var position = _fsData.Position;
-			await _fsData.WriteAsync(input);
-			return position;
-		}
-
 		public ValueTask DisposeAsync()
 		{
 			return _fsData.DisposeAsync();

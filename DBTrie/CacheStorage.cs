@@ -73,6 +73,7 @@ namespace DBTrie
 
 		public async ValueTask Write(long offset, ReadOnlyMemory<byte> input)
 		{
+			var lastByte = offset + input.Length;
 			var p = Math.DivRem(offset, PageSize, out var pageOffset);
 			while (!input.IsEmpty)
 			{
@@ -84,25 +85,7 @@ namespace DBTrie
 				pageOffset = 0;
 				p++;
 			}
-		}
-
-		public async ValueTask<long> WriteToEnd(ReadOnlyMemory<byte> input)
-		{
-			var len = input.Length;
-			var p = Math.DivRem(Length, PageSize, out var pageOffset);
-			while (!input.IsEmpty)
-			{
-				if (!pages.TryGetValue(p, out var page))
-				{
-					page = await FetchPage(p);
-				}
-				input = WriteOnPage(page, pageOffset, input);
-				pageOffset = 0;
-				p++;
-			}
-			var position = _Length;
-			_Length += len;
-			return position;
+			_Length = Math.Max(_Length, lastByte);
 		}
 
 		private ReadOnlyMemory<byte> WriteOnPage(CachePage page, long pageOffset, ReadOnlyMemory<byte> input)
@@ -120,6 +103,7 @@ namespace DBTrie
 
 		public async ValueTask Flush()
 		{
+			await inner.Reserve((int)(Length - inner.Length));
 			foreach(var page in pages.Where(p => p.Value.Dirty))
 			{
 				await inner.Write(page.Key * PageSize, page.Value.Content.Slice(page.Value.WrittenStart, page.Value.WrittenLength));

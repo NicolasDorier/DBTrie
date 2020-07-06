@@ -51,6 +51,8 @@ namespace DBTrie.Tests
 
 			Assert.Equal(cache.Length, fs.Length);
 			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length, fs.Length);
+			await fs.Reserve(10);
+			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 10, fs.Length);
 		}
 
 		private static void CreateEmptyFile(int size)
