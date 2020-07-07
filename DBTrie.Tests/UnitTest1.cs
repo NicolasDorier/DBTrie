@@ -261,7 +261,7 @@ namespace DBTrie.Tests
 					ordered = tables.OrderBy(o => o).ToArray();
 					Assert.True(tables.SequenceEqual(ordered));
 					var r = new Random(0);
-					for (int i = 0; i == 10; i++)
+					for (int i = 0; i < 10; i++)
 					{
 						var keys = new string[3];
 						keys[0] = RandomWord(5, r);
@@ -284,7 +284,7 @@ namespace DBTrie.Tests
 
 						// Reloading
 						trie = await ReloadTrie(trie);
-
+						schema = await Schema.OpenFromTrie(trie);
 						// Make sure our tables are still here
 						foreach (var k in keys)
 							Assert.True(await schema.TableExists(k));

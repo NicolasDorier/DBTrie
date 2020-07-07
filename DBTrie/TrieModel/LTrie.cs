@@ -232,27 +232,10 @@ namespace DBTrie.TrieModel
 					if (key.Span[i] != record.Key.Span[i])
 						break;
 					var oldPointer = gn.OwnPointer;
-					var result = await gn.SetLinkToNode(key.Span[i]);
-					if (result.Relocated)
-					{
-						if (prev is LTrieNode)
-						{
-							var incomingLink = prev.GetLinkFromPointer(oldPointer);
-							await StorageHelper.WritePointer(incomingLink.OwnPointer + 2, gn.OwnPointer);
-
-							// Update in-memory
-							incomingLink.Pointer = gn.OwnPointer;
-						}
-						else
-						{
-							await this.StorageHelper.WritePointer(2, res.BestNode.OwnPointer);
-							// Update in-memory
-							RootPointer = gn.OwnPointer;
-						}
-					}
+					var link = await gn.SetValueLinkToNode(key.Span[i]);
 					prev = gn;
 					await gn.AssertConsistency();
-					gn = await ReadNode(result.Link.Pointer, prev.MinKeyLength + 1);
+					gn = await ReadNode(link.Pointer, prev.MinKeyLength + 1);
 				}
 				increaseRecord = true;
 				if (gn.MinKeyLength == key.Length)

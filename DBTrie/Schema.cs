@@ -18,8 +18,6 @@ namespace DBTrie
 
 		internal Schema(LTrie trie, ulong lastFileNumber)
 		{
-			if (trie == null)
-				throw new ArgumentNullException(nameof(trie));
 			this.Trie = trie;
 			this.LastFileNumber = lastFileNumber;
 		}

@@ -125,7 +125,7 @@ namespace DBTrie.TrieModel
 			UpdateInternalLink(false, linkPointer);
 		}
 
-		internal async ValueTask<(bool Relocated, Link Link)> SetLinkToNode(byte label)
+		internal async ValueTask<Link> SetValueLinkToNode(byte label)
 		{
 			if (this.GetLink(label) is Link l)
 			{
@@ -151,24 +151,9 @@ namespace DBTrie.TrieModel
 				l.Pointer = newNodePointer;
 				// We don't need to update the in-memory representation of the new node
 				// because it currently is not in memory
-				return (false, l);
+				return l;
 			}
-			else
-			{
-				var relocated = false;
-				if (!this.FreeSlotPointers.TryPeek(out var emptySlotPointer))
-				{
-					relocated = true;
-					await Relocate(externalLinks.Count + 1);
-					emptySlotPointer = FreeSlotPointers.Peek();
-				}
-				var newNodePointer = await WriteNewNode(1);
-				await this.Trie.StorageHelper.WriteExternalLink(emptySlotPointer, label, false, newNodePointer);
-
-				// Update in-memory
-				l = UpdateExternalLink(emptySlotPointer, label, true, newNodePointer);
-				return (relocated, l);
-			}
+			throw new InvalidOperationException("The specified link in SetValueLinkToNode should be a value node");
 		}
 
 		internal static int WriteNew(Span<byte> output, int neededSlots)
