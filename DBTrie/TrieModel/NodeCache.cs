@@ -4,9 +4,9 @@ using System.Text;
 
 namespace DBTrie.TrieModel
 {
-	internal class GenerationNodeCache : Dictionary<long, LTrieNode>
+	internal class NodeCache : Dictionary<long, LTrieNode>
 	{
-		public GenerationNodeCache()
+		public NodeCache()
 		{
 		}
 

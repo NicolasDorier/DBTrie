@@ -55,10 +55,10 @@ namespace DBTrie.TrieModel
 
 		public void ActivateCache()
 		{
-			GenerationNodeCache = new GenerationNodeCache();
+			NodeCache = new NodeCache();
 		}
 
-		public GenerationNodeCache? GenerationNodeCache { get; private set; }
+		public NodeCache? NodeCache { get; private set; }
 
 		internal async ValueTask<LTrieValue> ReadValue(long pointer)
 		{
@@ -152,7 +152,7 @@ namespace DBTrie.TrieModel
 		public async ValueTask<LTrieNode> ReadNode(long pointer, int minKeyLength, bool useCache = true)
 		{
 			LTrieNode? cached = null;
-			GenerationNodeCache?.TryGetValue(pointer, out cached);
+			NodeCache?.TryGetValue(pointer, out cached);
 			if (cached is LTrieNode && useCache)
 			{
 				if (cached.MinKeyLength != minKeyLength)
@@ -167,7 +167,7 @@ namespace DBTrie.TrieModel
 			await Storage.Read(pointer, memory);
 			var node = new LTrieNode(this, minKeyLength, pointer, memory);
 			if (useCache)
-				GenerationNodeCache?.Add(pointer, node);
+				NodeCache?.Add(pointer, node);
 			return node;
 		}
 

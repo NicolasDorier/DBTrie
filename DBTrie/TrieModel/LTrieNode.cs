@@ -314,7 +314,7 @@ namespace DBTrie.TrieModel
 			{
 				k.OwnPointer += offset;
 			}
-			Trie.GenerationNodeCache?.Relocate(oldPointer, newPointer);
+			Trie.NodeCache?.Relocate(oldPointer, newPointer);
 		}
 
 		public static int GetSlotReservationCount(int kl)

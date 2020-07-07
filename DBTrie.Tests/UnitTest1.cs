@@ -434,7 +434,7 @@ namespace DBTrie.Tests
 		private static async ValueTask<LTrie> ReloadTrie(LTrie trie)
 		{
 			var cache = trie.Storage as CacheStorage;
-			var trie2 = await CreateTrie(trie.Storage, trie.GenerationNodeCache is { });
+			var trie2 = await CreateTrie(trie.Storage, trie.NodeCache is { });
 			trie2.ConsistencyCheck = trie.ConsistencyCheck;
 			return trie2;
 		}
