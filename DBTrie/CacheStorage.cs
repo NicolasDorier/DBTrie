@@ -113,6 +113,15 @@ namespace DBTrie
 			await inner.Flush();
 		}
 
+		/// <summary>
+		/// Make sure the underlying file can grow to write the data to commit
+		/// </summary>
+		/// <returns></returns>
+		public async ValueTask Reserve()
+		{
+			await inner.Reserve((int)(Length - inner.Length));
+		}
+
 		public async ValueTask DisposeAsync()
 		{
 			await Flush();
