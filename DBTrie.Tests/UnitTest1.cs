@@ -533,6 +533,11 @@ namespace DBTrie.Tests
 					Assert.Equal("k-r2", await trie.GetValue("k"));
 					Assert.Equal("a", await trie.GetValue("Relocation"));
 					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+
+					var longKey = new string(Enumerable.Range(0, 256).Select(o => 'a').ToArray());
+					var longValue = new string(Enumerable.Range(0, 256).Select(o => 'b').ToArray());
+					await trie.SetKey(longKey, longValue);
+					Assert.Equal(longValue, await trie.GetValue(longKey));
 				}
 		}
 

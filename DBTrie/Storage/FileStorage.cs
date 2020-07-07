@@ -50,12 +50,6 @@ namespace DBTrie.Storage
 			await _fsData.DisposeAsync();
 		}
 
-		public async ValueTask Rezise(long newLength)
-		{
-			_fsData.Seek(newLength - 1, SeekOrigin.Begin);
-			var b = new byte[1];
-			await _fsData.WriteAsync(b);
-		}
 
 		public async ValueTask Flush()
 		{
