@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using System.Reflection.Emit;
 
 namespace DBTrie.TrieModel
 {
@@ -32,7 +33,7 @@ namespace DBTrie.TrieModel
 			}
 
 			memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
-			links = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
+			externalLinks = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
 			for (int j = 0; j < memory.Length; j += Sizes.ExternalLinkLength)
 			{
 				var slotPointer = OwnPointer + 2 + Sizes.DefaultPointerLen + j;
@@ -47,14 +48,14 @@ namespace DBTrie.TrieModel
 				l.Pointer = linkPointer;
 				l.OwnPointer = slotPointer;
 				l.LinkToNode = memory.Span[j + 1] == 0;
-				links.Add(i, l);
+				externalLinks.Add(i, l);
 			}
 		}
 
-		SortedList<byte, Link> links { get; } = new SortedList<byte, Link>();
+		SortedList<byte, Link> externalLinks { get; } = new SortedList<byte, Link>();
 		public Link? GetLink(byte value)
 		{
-			links.TryGetValue(value, out var k);
+			externalLinks.TryGetValue(value, out var k);
 			return k;
 		}
 		public Queue<long> FreeSlotPointers { get; } = new Queue<long>();
@@ -95,7 +96,7 @@ namespace DBTrie.TrieModel
 					LinkToNode = linkToNode,
 					Pointer = pointer
 				};
-				links.Add(label, l);
+				externalLinks.Add(label, l);
 			}
 			return l;
 		}
@@ -105,14 +106,14 @@ namespace DBTrie.TrieModel
 			return this.ExternalLinks.First(l => l.Pointer == pointer);
 		}
 
-		public IEnumerable<Link> ExternalLinks => links.Values;
+		public IList<Link> ExternalLinks => externalLinks.Values;
 
 		public int LineLength { get; internal set; }
 
 		public Link? InternalLink { get; private set; }
 		public long OwnPointer { get; internal set; }
 		
-		internal async ValueTask SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		internal async ValueTask SetInternalValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			if (InternalLink is Link l && await Trie.TryOverwriteValue(l, value))
 				return;
@@ -158,7 +159,7 @@ namespace DBTrie.TrieModel
 				if (!this.FreeSlotPointers.TryPeek(out var emptySlotPointer))
 				{
 					relocated = true;
-					await Relocate(links.Count + 1);
+					await Relocate(externalLinks.Count + 1);
 					emptySlotPointer = FreeSlotPointers.Peek();
 				}
 				var newNodePointer = await WriteNewNode(1);
@@ -194,7 +195,7 @@ namespace DBTrie.TrieModel
 			return 2 + Sizes.DefaultPointerLen + (reservedSlots * Sizes.ExternalLinkLength);
 		}
 
-		internal async ValueTask<bool> SetValue(byte label, ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		internal async ValueTask<bool> SetExternalValue(byte label, ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			if (this.GetLink(label) is Link k)
 			{
@@ -217,7 +218,7 @@ namespace DBTrie.TrieModel
 					// We need to relocate the current node somewhere else to
 					// increase the number of slots
 					relocated = true;
-					await Relocate(links.Count + 1);
+					await Relocate(externalLinks.Count + 1);
 					emptySlotPointer = FreeSlotPointers.Peek();
 				}
 
@@ -246,7 +247,7 @@ namespace DBTrie.TrieModel
 			if (!Trie.ConsistencyCheck)
 				return;
 			var stored = await Trie.ReadNode(OwnPointer, MinKeyLength, false);
-			if (stored.links.Count != links.Count)
+			if (stored.externalLinks.Count != externalLinks.Count)
 				throw new Exception("stored.links.Count != links.Count");
 			if (stored.InternalLink?.Pointer != InternalLink?.Pointer)
 				throw new Exception("stored.InternalLink?.RecordPointer != InternalLink?.RecordPointer");
@@ -300,8 +301,8 @@ namespace DBTrie.TrieModel
 		internal async ValueTask<bool> SetValue(byte? linkLabel, ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			if (linkLabel is byte b)
-				return await SetValue(b, key, value);
-			await SetValue(key, value);
+				return await SetExternalValue(b, key, value);
+			await SetInternalValue(key, value);
 			return false;
 		}
 
@@ -338,6 +339,39 @@ namespace DBTrie.TrieModel
 			var len = LTrieValue.WriteToSpan(owner.Memory.Span, key.Span, value.Span);
 			var memory = owner.Memory.Slice(0, len);
 			return await Trie.Storage.WriteToEnd(memory);
+		}
+
+		public async ValueTask<bool> RemoveInternalLink()
+		{
+			if (this.InternalLink is Link l)
+			{
+				await Trie.StorageHelper.WritePointer(l.OwnPointer, 0);
+				InternalLink = null;
+				return true;
+			}
+			return false;
+		}
+		public async ValueTask<bool> RemoveExternalLink(byte label)
+		{
+			if (this.GetLink(label) is Link l)
+			{
+				await Trie.StorageHelper.WriteExternalLink(l.OwnPointer, 0, false, 0);
+				this.externalLinks.Remove(label);
+				return true;
+			}
+			return false;
+		}
+
+		public Link? GetRemainingValueLink()
+		{
+			if (InternalLink is Link)
+				return null;
+			if (externalLinks.Count != 1)
+				return null;
+			var lastChild = externalLinks.Values.First();
+			if (lastChild.LinkToNode)
+				return null;
+			return lastChild;
 		}
 	}
 }

@@ -28,6 +28,10 @@ namespace DBTrie.Tests
         {
             await trie.SetKey(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(value));
         }
+        public static async Task<bool> DeleteRow(this LTrie trie, string key)
+        {
+            return await trie.DeleteRow(Encoding.UTF8.GetBytes(key));
+        }
 
         public static async Task Write(this IStorage storage, long position, string txt)
         {

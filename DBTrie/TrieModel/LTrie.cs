@@ -2,6 +2,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Data.SqlTypes;
 using System.Drawing;
 using System.Text;
 using System.Threading.Tasks;
@@ -210,7 +211,7 @@ namespace DBTrie.TrieModel
 				// we replace the internal value
 				if (res.BestNode.MinKeyLength == key.Length)
 				{
-					await res.BestNode.SetValue(key, value);
+					await res.BestNode.SetInternalValue(key, value);
 					return;
 				}
 				var record = await ReadValue(res.ValueLink.Pointer);
@@ -254,13 +255,13 @@ namespace DBTrie.TrieModel
 					gn = await ReadNode(result.Link.Pointer, prev.MinKeyLength + 1);
 				}
 				increaseRecord = true;
-				if (maxCommonKeyLength == key.Length)
+				if (gn.MinKeyLength == key.Length)
 				{
-					await gn.SetValue(key, value);
+					await gn.SetInternalValue(key, value);
 				}
 				else
 				{
-					await gn.SetValue(key.Span[maxCommonKeyLength], key, value);
+					await gn.SetExternalValue(key.Span[gn.MinKeyLength], key, value);
 				}
 				await gn.AssertConsistency();
 			}
@@ -347,6 +348,80 @@ namespace DBTrie.TrieModel
 				ValueLength = r.ValueLength,
 				ValuePointer = r.ValuePointer
 			};
+		}
+		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
+		{
+			var res = await FindBestMatch(key);
+			if (res.ValueLink is null)
+				return false;
+			bool removedValue = false;
+			bool removedNode = false;
+			if (res.ValueLink.Label is byte label)
+			{
+				var value = await ReadValue(res.ValueLink.Pointer);
+				if (value.Key.Span.SequenceCompareTo(key.Span) == 0)
+				{
+					removedValue = await res.BestNode.RemoveExternalLink(label);
+				}
+			}
+			else
+			{
+				removedValue = await res.BestNode.RemoveInternalLink();
+			}
+
+			if (res.BestNodeParent is LTrieNode parent)
+			{
+				// If there is a single value link and no internal link, we can delete this node
+				if (res.BestNode.GetRemainingValueLink() is Link remainingLink)
+				{
+					var incomingLink = parent.GetLinkFromPointer(res.BestNode.OwnPointer);
+					// Update storage so incoming link now point to the remaininglink's value
+					await StorageHelper.WriteExternalLink(incomingLink.OwnPointer, incomingLink.Label!.Value, false, remainingLink.Pointer);
+
+					// Update in-memory
+					incomingLink.LinkToNode = false;
+					incomingLink.Pointer = remainingLink.Pointer;
+					removedNode = true;
+				}
+				// If we find out that there is
+				// no more external links, then we can delete the node
+				if (!removedNode && res.BestNode.ExternalLinks.Count == 0)
+				{
+					var incomingLink = parent.GetLinkFromPointer(res.BestNode.OwnPointer);
+					var internalLink = res.BestNode.InternalLink;
+					// Update storage, if there is no internal link, the incoming link should be removed
+					if (internalLink is null)
+					{
+						await parent.RemoveExternalLink(incomingLink.Label!.Value);
+					}
+					// Else, it should be redirected to the value of the internal link
+					else
+					{
+						await StorageHelper.WriteExternalLink(incomingLink.OwnPointer, incomingLink.Label!.Value, false, internalLink.Pointer);
+						incomingLink.LinkToNode = false;
+						incomingLink.Pointer = internalLink.Pointer;
+					}
+					removedNode = true;
+				}
+			}
+			
+			if (removedValue)
+			{
+				await StorageHelper.WriteLong(2 + Sizes.DefaultPointerLen, RecordCount - 1);
+				RecordCount--;
+			}
+			if (removedNode)
+			{
+				NodeCache?.Remove(res.BestNode.OwnPointer);
+				if (res.BestNodeParent is LTrieNode n)
+					await n.AssertConsistency();
+			}
+			if (removedValue)
+			{
+				if (res.BestNode is LTrieNode n)
+					await n.AssertConsistency();
+			}
+			return removedValue;
 		}
 
 		internal async ValueTask<MatchResult> FindBestMatch(ReadOnlyMemory<byte> key)

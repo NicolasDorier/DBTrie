@@ -4,7 +4,7 @@ using System.Text;
 
 namespace DBTrie.TrieModel
 {
-	public class Link
+	internal class Link
 	{
 		public Link(byte? label)
 		{
