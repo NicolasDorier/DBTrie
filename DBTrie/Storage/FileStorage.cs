@@ -26,7 +26,7 @@ namespace DBTrie.Storage
 
 		private FileStream OpenFile()
 		{
-			return new FileStream(this._fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, _fileStreamBufferSize, FileOptions.WriteThrough);
+			return new FileStream(this._fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, _fileStreamBufferSize, FileOptions.Asynchronous);
 		}
 
 		public long Length => _fsData.Length;

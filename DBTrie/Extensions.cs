@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -24,17 +25,17 @@ namespace DBTrie
 			return res;
 		}
 
-		public static ulong BigEndianToULong(this ReadOnlySpan<byte> value)
+		public static ulong ReadUInt64BigEndian(this ReadOnlySpan<byte> value)
 		{
-			return (ulong)(((ulong)value[0] << 56) + ((ulong)value[1] << 48) + ((ulong)value[2] << 40) + ((ulong)value[3] << 32) + ((ulong)value[4] << 24) + ((ulong)value[5] << 16) + ((ulong)value[6] << 8) + (ulong)value[7]);
+			return BinaryPrimitives.ReadUInt64BigEndian(value);
 		}
-		public static ushort BigEndianToShort(this ReadOnlySpan<byte> span)
+		public static ushort ReadUInt16BigEndian(this ReadOnlySpan<byte> span)
 		{
-			return (ushort)(span[0] << 8 | span[1]);
+			return BinaryPrimitives.ReadUInt16BigEndian(span);
 		}
-		public static uint BigEndianToUInt(this ReadOnlySpan<byte> value)
+		public static uint ReadUInt32BigEndian(this ReadOnlySpan<byte> value)
 		{
-			return (uint)(value[0] << 24 | value[1] << 16 | value[2] << 8 | value[3]);
+			return BinaryPrimitives.ReadUInt32BigEndian(value);
 		}
 		public static ReadOnlySpan<byte> AsReadOnlySpan(this byte[] arr)
 		{
@@ -42,14 +43,7 @@ namespace DBTrie
 		}
 		public static void ToBigEndian(this Span<byte> value, ulong val1)
 		{
-			value[0] = (byte)(val1 >> 56);
-			value[1] = (byte)(val1 >> 48);
-			value[2] = (byte)(val1 >> 40);
-			value[3] = (byte)(val1 >> 32);
-			value[4] = (byte)(val1 >> 24);
-			value[5] = (byte)(val1 >> 16);
-			value[6] = (byte)(val1 >> 8);
-			value[7] = (byte)val1;
+			BinaryPrimitives.WriteUInt64BigEndian(value, val1);
 		}
 		public static void ToBigEndianDynamic(this Span<byte> value, ulong val1)
 		{
@@ -59,15 +53,11 @@ namespace DBTrie
 		}
 		public static void ToBigEndian(this Span<byte> value, uint val1)
 		{
-			value[0] = (byte)(val1 >> 24);
-			value[1] = (byte)(val1 >> 16);
-			value[2] = (byte)(val1 >> 8);
-			value[3] = (byte)(val1);
+			BinaryPrimitives.WriteUInt32BigEndian(value, val1);
 		}
 		public static void ToBigEndian(this Span<byte> value, ushort val1)
 		{
-			value[0] = (byte)(val1 >> 8);
-			value[1] = (byte)(val1);
+			BinaryPrimitives.WriteUInt16BigEndian(value, val1);
 		}
 		internal class SlicedMemoryOwner : IMemoryOwner<byte>
 		{

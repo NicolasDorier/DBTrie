@@ -30,7 +30,7 @@ namespace DBTrie
 				throw new InvalidOperationException("The value is not a ulong");
 			var v = new byte[8];
 			await ReadValue(v.AsMemory());
-			return ((ReadOnlySpan<byte>)v.AsSpan()).BigEndianToULong();
+			return ((ReadOnlySpan<byte>)v.AsSpan()).ReadUInt64BigEndian();
 		}
 
 		public async ValueTask Write(ulong value)

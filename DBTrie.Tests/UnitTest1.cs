@@ -120,7 +120,7 @@ namespace DBTrie.Tests
 				Assert.Null(await trie.GetKey("@u"));
 				Assert.Equal(4282, trie.RecordCount);
 
-				var schema = new Schema(trie);
+				var schema = await Schema.OpenFromTrie(trie);
 				Assert.True(await schema.TableExists("IndexProgress"));
 				Assert.False(await schema.TableExists("In"));
 				Assert.False(await schema.TableExists("IndexProgresss"));
@@ -128,18 +128,18 @@ namespace DBTrie.Tests
 
 				var filename = await schema.GetFileNameOrCreate("IndexProgress");
 				Assert.Equal(10000006UL, filename);
-				Assert.Equal(10004281UL, await schema.GetLastFileNumber());
+				Assert.Equal(10004281UL, schema.LastFileNumber);
 
 				// This should create a new record
 				filename = await schema.GetFileNameOrCreate("NotExists");
 				Assert.Equal(10004282UL, filename);
-				Assert.Equal(10004282UL, await schema.GetLastFileNumber());
+				Assert.Equal(10004282UL, schema.LastFileNumber);
 				Assert.Equal(4283, trie.RecordCount);
 
 				// This should NOT create a new record
 				filename = await schema.GetFileNameOrCreate("NotExists");
 				Assert.Equal(10004282UL, filename);
-				Assert.Equal(10004282UL, await schema.GetLastFileNumber());
+				Assert.Equal(10004282UL, schema.LastFileNumber);
 				Assert.Equal(4283, trie.RecordCount);
 
 				// Reloading the tree
@@ -148,11 +148,15 @@ namespace DBTrie.Tests
 				// We should get back our created table
 				filename = await schema.GetFileNameOrCreate("NotExists");
 				Assert.Equal(10004282UL, filename);
-				Assert.Equal(10004282UL, await schema.GetLastFileNumber());
+				Assert.Equal(10004282UL, schema.LastFileNumber);
 				Assert.Equal(4283, trie.RecordCount);
 
+				// Let's make sure this has been persisted as well
+				schema = await Schema.OpenFromTrie(trie);
+				Assert.Equal(10004282UL, schema.LastFileNumber);
+
 				// Can list tables by name?
-				schema = new Schema(trie);
+				schema = await Schema.OpenFromTrie(trie);
 				var tables = await schema.GetTables("TestTa").ToArrayAsync();
 				var ordered = tables.OrderBy(o => o).ToArray();
 				Assert.True(tables.SequenceEqual(ordered));

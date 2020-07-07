@@ -34,7 +34,7 @@ namespace DBTrie.Storage
 		internal SortedList<long, CachePage> pages = new SortedList<long, CachePage>();
 		private MemoryPool<byte> MemoryPool = MemoryPool<byte>.Shared;
 		bool own;
-		public CacheStorage(IStorage inner, bool ownInner = true, int pageSize = 4096)
+		public CacheStorage(IStorage inner, bool ownInner = true, int pageSize = 8192)
 		{
 			this.inner = inner;
 			PageSize = pageSize;

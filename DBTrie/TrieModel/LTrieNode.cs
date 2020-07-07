@@ -18,7 +18,7 @@ namespace DBTrie.TrieModel
 			Trie = trie;
 			MinKeyLength = minKeyLength;
 			OwnPointer = pointer;
-			ushort lineLen = memory.Span.BigEndianToShort();
+			ushort lineLen = memory.Span.ReadUInt16BigEndian();
 			LineLength = lineLen;
 			var internalLinkPointer = (long)memory.Span.Slice(2, Sizes.DefaultPointerLen).BigEndianToLongDynamic();
 			if (internalLinkPointer != 0)
@@ -119,7 +119,7 @@ namespace DBTrie.TrieModel
 			// Write value in storage
 			var linkPointer = await WriteNewValue(key, value);
 			// Update internal link
-			await Trie.StorageWriter.WritePointer(OwnPointer + 2, linkPointer);
+			await Trie.StorageHelper.WritePointer(OwnPointer + 2, linkPointer);
 			// Update in-memory representation
 			UpdateInternalLink(false, linkPointer);
 		}
@@ -135,14 +135,14 @@ namespace DBTrie.TrieModel
 				var newNodePointer = await WriteNewNode(internalLink ? 1 : 2);
 				if (internalLink)
 				{
-					await Trie.StorageWriter.WritePointer(newNodePointer + 2, record.Pointer);
+					await Trie.StorageHelper.WritePointer(newNodePointer + 2, record.Pointer);
 				}
 				// Update the link in storage
-				await Trie.StorageWriter.WriteExternalLink(l.OwnPointer, label, true, newNodePointer);
+				await Trie.StorageHelper.WriteExternalLink(l.OwnPointer, label, true, newNodePointer);
 				if (!internalLink)
 				{
 					var nextLabel = record.Key.Span[this.MinKeyLength + 1];
-					await Trie.StorageWriter.WriteExternalLink(newNodePointer + 2 + Sizes.DefaultPointerLen, nextLabel, false, record.Pointer);
+					await Trie.StorageHelper.WriteExternalLink(newNodePointer + 2 + Sizes.DefaultPointerLen, nextLabel, false, record.Pointer);
 				}
 
 				// Update in-memory
@@ -162,7 +162,7 @@ namespace DBTrie.TrieModel
 					emptySlotPointer = FreeSlotPointers.Peek();
 				}
 				var newNodePointer = await WriteNewNode(1);
-				await this.Trie.StorageWriter.WriteExternalLink(emptySlotPointer, label, false, newNodePointer);
+				await this.Trie.StorageHelper.WriteExternalLink(emptySlotPointer, label, false, newNodePointer);
 
 				// Update in-memory
 				l = UpdateExternalLink(emptySlotPointer, label, true, newNodePointer);
@@ -203,7 +203,7 @@ namespace DBTrie.TrieModel
 				// Write value in storage
 				var valuePointer = await WriteNewValue(key, value);
 				//Update the external link in storage
-				await this.Trie.StorageWriter.WriteExternalLink(k.OwnPointer, label, false, valuePointer);
+				await this.Trie.StorageHelper.WriteExternalLink(k.OwnPointer, label, false, valuePointer);
 				// Update in-memory representation
 				k.LinkToNode = false;
 				k.Pointer = valuePointer;
@@ -226,7 +226,7 @@ namespace DBTrie.TrieModel
 					// Write value in storage
 					var valuePointer = await WriteNewValue(key, value);
 					//Update the link in storage
-					await Trie.StorageWriter.WriteExternalLink(emptySlotPointer, label, false, valuePointer);
+					await Trie.StorageHelper.WriteExternalLink(emptySlotPointer, label, false, valuePointer);
 					// Update in-memory representation
 					this.FreeSlotPointers.Dequeue();
 					this.UpdateExternalLink(emptySlotPointer, label, false, valuePointer);

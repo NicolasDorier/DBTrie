@@ -12,25 +12,26 @@ namespace DBTrie
 		static Schema()
 		{
 			LastFileNumberKey = Encoding.UTF8.GetBytes("@@@@LastFileNumber").AsMemory().ToReadOnly();
-			UserTableKey = Encoding.UTF8.GetBytes("@ut").AsMemory().ToReadOnly();
 		}
 		static ReadOnlyMemory<byte> LastFileNumberKey { get; }
-		static ReadOnlyMemory<byte> UserTableKey { get; }
 		internal LTrie Trie { get; }
 
-		internal Schema(LTrie trie)
+		internal Schema(LTrie trie, ulong lastFileNumber)
 		{
 			if (trie == null)
 				throw new ArgumentNullException(nameof(trie));
 			this.Trie = trie;
+			this.LastFileNumber = lastFileNumber;
 		}
 
-		public async ValueTask<ulong> GetLastFileNumber()
+		public ulong LastFileNumber { get; internal set; }
+
+		internal static async ValueTask<Schema> OpenFromTrie(LTrie trie)
 		{
-			var key = await Trie.GetRow(LastFileNumberKey);
+			var key = await trie.GetRow(LastFileNumberKey);
 			if (key is null)
-				throw new KeyNotFoundException("@@@@LastFileNumber table does not exists");
-			return await key.ReadAsULong();
+				throw new FormatException("Impossible to parse the schema");
+			return new Schema(trie, await key.ReadAsULong());
 		}
 
 		public async ValueTask<bool> TableExists(string tableName)
@@ -45,21 +46,19 @@ namespace DBTrie
 			var key = await Trie.GetRow(owner.Memory);
 			if (key is null)
 			{
-				var lastNumberKey = await Trie.GetRow(LastFileNumberKey);
-				if (lastNumberKey is null)
-					throw new KeyNotFoundException("@@@@LastFileNumber table does not exists");
-				var lastFileNumber = await lastNumberKey.ReadAsULong();
-				lastFileNumber++;
+				var fileNumber = LastFileNumber + 1;
 				var bytes = new byte[10];
 				bytes[1] = 1;
-				bytes.AsSpan().Slice(2).ToBigEndian(lastFileNumber);
+				bytes.AsSpan().Slice(2).ToBigEndian(fileNumber);
 				await Trie.SetKey(owner.Memory, bytes);
-				await lastNumberKey.Write(lastFileNumber);
-				return lastFileNumber;
+				var row = await Trie.GetRow(LastFileNumberKey);
+				if (row is null)
+					throw new InvalidOperationException("LastFileNumberKey is not found");
+				await row.Write(fileNumber);
+				LastFileNumber = fileNumber;
+				return fileNumber;
 			}
-			using var owner2 = Trie.MemoryPool.Rent(key.ValueLength);
-			await key.ReadValue(owner2.Memory);
-			return owner2.Memory.Slice(2, 8).ToReadOnly().Span.BigEndianToULong();
+			return await Trie.StorageHelper.ReadULong(key.ValuePointer + 2);
 		}
 
 		private IMemoryOwner<byte> GetTableNameBytes(string? tableName)

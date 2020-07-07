@@ -50,8 +50,9 @@ namespace DBTrie.TrieModel
 
 		internal MemoryPool<byte> MemoryPool { get; }
 		internal IStorage Storage { get; }
-		public StorageWriter StorageWriter { get; }
+		public StorageHelper StorageHelper { get; }
 		public bool ConsistencyCheck { get; set; }
+
 		public void ActivateCache()
 		{
 			GenerationNodeCache = new GenerationNodeCache();
@@ -69,7 +70,7 @@ namespace DBTrie.TrieModel
 			await Storage.Read(pointer, memory);
 			var protocol = memory.Span[0];
 			var headerSize = protocol == 0 ? 7 : 11;
-			ushort keySize = memory.ToReadOnly().Span.Slice(1, 2).BigEndianToShort();
+			ushort keySize = memory.ToReadOnly().Span.Slice(1, 2).ReadUInt16BigEndian();
 			if (keySize > (readLen - headerSize))
 			{
 				readLen = keySize + headerSize;
@@ -79,14 +80,14 @@ namespace DBTrie.TrieModel
 				await Storage.Read(pointer, memory);
 			}
 			bool nullValue = (memory.Span[3] & 0x80) != 0;
-			int valueSize = (int)(nullValue ? 0U : memory.ToReadOnly().Span.Slice(3).BigEndianToUInt());
+			int valueSize = (int)(nullValue ? 0U : memory.ToReadOnly().Span.Slice(3).ReadUInt32BigEndian());
 			return new LTrieValue(owner.Slice(headerSize, keySize))
 			{
 				Protocol = protocol,
 				Pointer = pointer,
 				ValueLength = valueSize,
 				ValuePointer = pointer + headerSize + keySize,
-				ValueMaxLength = protocol == 0 ? valueSize : (int)memory.Slice(7).ToReadOnly().Span.BigEndianToUInt()
+				ValueMaxLength = protocol == 0 ? valueSize : (int)memory.Slice(7).ToReadOnly().Span.ReadUInt32BigEndian()
 			};
 		}
 
@@ -120,7 +121,7 @@ namespace DBTrie.TrieModel
 			memoryPool ??= MemoryPool<byte>.Shared;
 			MemoryPool = memoryPool;
 			Storage = storage;
-			StorageWriter = new StorageWriter(memoryPool, storage);
+			StorageHelper = new StorageHelper(memoryPool, storage);
 			RootPointer = rootPointer;
 			RecordCount = recordCount;
 		}
@@ -190,14 +191,14 @@ namespace DBTrie.TrieModel
 					if (res.BestNodeParent is LTrieNode parent)
 					{
 						var incomingLink = parent.GetLinkFromPointer(oldPointer);
-						await this.StorageWriter.WritePointer(incomingLink.OwnPointer + 2, res.BestNode.OwnPointer);
+						await this.StorageHelper.WritePointer(incomingLink.OwnPointer + 2, res.BestNode.OwnPointer);
 						// Update in-memory
 						incomingLink.Pointer = res.BestNode.OwnPointer;
 						await parent.AssertConsistency();
 					}
 					else
 					{
-						await this.StorageWriter.WritePointer(2, res.BestNode.OwnPointer);
+						await this.StorageHelper.WritePointer(2, res.BestNode.OwnPointer);
 						// Update in-memory
 						RootPointer = res.BestNode.OwnPointer;
 					}
@@ -236,14 +237,14 @@ namespace DBTrie.TrieModel
 						if (prev is LTrieNode)
 						{
 							var incomingLink = prev.GetLinkFromPointer(oldPointer);
-							await StorageWriter.WritePointer(incomingLink.OwnPointer + 2, gn.OwnPointer);
+							await StorageHelper.WritePointer(incomingLink.OwnPointer + 2, gn.OwnPointer);
 
 							// Update in-memory
 							incomingLink.Pointer = gn.OwnPointer;
 						}
 						else
 						{
-							await this.StorageWriter.WritePointer(2, res.BestNode.OwnPointer);
+							await this.StorageHelper.WritePointer(2, res.BestNode.OwnPointer);
 							// Update in-memory
 							RootPointer = gn.OwnPointer;
 						}
@@ -266,7 +267,7 @@ namespace DBTrie.TrieModel
 			if (increaseRecord)
 			{
 				// Update the record count
-				await StorageWriter.WriteLong(2 + Sizes.DefaultPointerLen, RecordCount + 1);
+				await StorageHelper.WriteLong(2 + Sizes.DefaultPointerLen, RecordCount + 1);
 				// Update in-memory
 				RecordCount++;
 			}
