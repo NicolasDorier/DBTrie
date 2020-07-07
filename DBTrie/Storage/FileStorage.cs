@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DBTrie
+namespace DBTrie.Storage
 {
 	public class FileStorage : IStorage, IAsyncDisposable
 	{

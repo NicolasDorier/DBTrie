@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DBTrie
+namespace DBTrie.Storage
 {
 	
 	public class CacheStorage : IStorage, IAsyncDisposable

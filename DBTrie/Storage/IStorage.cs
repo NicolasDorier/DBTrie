@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DBTrie
+namespace DBTrie.Storage
 {
 	public interface IStorage : IAsyncDisposable
 	{

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DBTrie.TrieModel;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;

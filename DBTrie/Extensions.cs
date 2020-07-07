@@ -24,20 +24,6 @@ namespace DBTrie
 			return res;
 		}
 
-		public static async ValueTask<long> WriteToEnd(this IStorage storage, ReadOnlyMemory<byte> input)
-		{
-			var oldPointer = storage.Length;
-			await storage.Write(storage.Length, input);
-			return oldPointer;
-		}
-		public static async ValueTask<long> Reserve(this IStorage storage, int length)
-		{
-			var oldPointer = storage.Length;
-			var nothing = new byte[1];
-			await storage.Write(storage.Length + length - 1, nothing);
-			return oldPointer;
-		}
-
 		public static ulong BigEndianToULong(this ReadOnlySpan<byte> value)
 		{
 			return (ulong)(((ulong)value[0] << 56) + ((ulong)value[1] << 48) + ((ulong)value[2] << 40) + ((ulong)value[3] << 32) + ((ulong)value[4] << 24) + ((ulong)value[5] << 16) + ((ulong)value[6] << 8) + (ulong)value[7]);
@@ -109,11 +95,6 @@ namespace DBTrie
 				return memoryOwner;
 			var sliced = memoryOwner.Memory.Slice(start, length);
 			return new SlicedMemoryOwner(memoryOwner, sliced);
-		}
-		public static IMemoryOwner<byte> RentExact(this MemoryPool<byte> memoryPool, int length)
-		{
-			var rented = memoryPool.Rent(length);
-			return rented.Slice(0, length);
 		}
 	}
 }
