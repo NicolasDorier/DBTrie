@@ -29,6 +29,7 @@ namespace DBTrie.TrieModel
 		{
 			GenerationNodeCache = new GenerationNodeCache();
 		}
+
 		public GenerationNodeCache? GenerationNodeCache { get; private set; }
 
 		internal async ValueTask<LTrieKidRecord> ReadRecord(long pointer)
@@ -101,10 +102,22 @@ namespace DBTrie.TrieModel
 			if (_RootNode is LTrieRootNode r)
 				return r;
 			using var owner = MemoryPool.Rent(Sizes.RootSize);
-			await Storage.Read(0, owner.Memory);
-			var memory = owner.Memory.ToReadOnly();
+			var memory = owner.Memory.Slice(0, Sizes.RootSize);
+			await Storage.Read(0, memory);
 			_RootNode = LTrieRootNode.ReadFromMemory(this, memory);
 			return _RootNode;
+		}
+
+		/// <summary>
+		/// Create empty trie
+		/// </summary>
+		/// <returns></returns>
+		internal async ValueTask InitTrie()
+		{
+			using var owner = MemoryPool.Rent(Sizes.RootSize);
+			var memory = owner.Memory.Slice(0, LTrieRootNode.WriteNew(owner.Memory.Span));
+			await Storage.Write(0, memory);
+			_RootNode = new LTrieRootNode(this, 0, 0);
 		}
 	}
 }

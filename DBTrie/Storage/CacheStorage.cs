@@ -41,7 +41,6 @@ namespace DBTrie.Storage
 			_Length = inner.Length;
 			own = ownInner;
 		}
-		int LastPage = -1;
 		public int PageSize { get; }
 
 		public async ValueTask Read(long offset, Memory<byte> output)
@@ -67,7 +66,6 @@ namespace DBTrie.Storage
 			await inner.Read(p * PageSize, owner.Memory);
 			var page = new CachePage((int)p, owner);
 			pages.Add(p, page);
-			LastPage = (int)Math.Max(p, LastPage);
 			return page;
 		}
 

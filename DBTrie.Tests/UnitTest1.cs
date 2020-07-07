@@ -24,9 +24,45 @@ namespace DBTrie.Tests
 		}
 
 		[Fact]
+		public async Task CanDoBasicTrieOperations()
+		{
+			CreateEmptyFile("Empty2", 0);
+			await using var fs = new FileStorage("Empty2");
+			var cache = new CacheStorage(fs, false);
+			var trie = new LTrie(cache);
+			await trie.InitTrie();
+			await cache.Flush();
+			trie = ReloadTrie(trie);
+			var rn = await trie.ReadRootNode();
+			Assert.Null(await rn.GetValue(1 + "test" + 1));
+			for (int i = 0; i < 5; i++)
+			{
+				await rn.SetKey(i + "test" + i, "lol" + i);
+				Assert.Equal("lol" + i, await rn.GetValue(i + "test" + i));
+			}
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Equal("lol" + i, await rn.GetValue(i + "test" + i));
+			}
+			trie = new LTrie(fs);
+			rn = await trie.ReadRootNode();
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Null(await rn.GetValue(i + "test" + i));
+			}
+			await cache.Flush();
+			trie = ReloadTrie(trie);
+			rn = await trie.ReadRootNode();
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Equal("lol" + i, await rn.GetValue(i + "test" + i));
+			}
+		}
+
+		[Fact]
 		public async Task CacheTests()
 		{
-			CreateEmptyFile(1030);
+			CreateEmptyFile("Empty", 1030);
 			await using var fs = new FileStorage("Empty");
 			var cache = new CacheStorage(fs, pageSize: 128);
 			await fs.Write(125, "abcdefgh");
@@ -57,13 +93,16 @@ namespace DBTrie.Tests
 			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 10, fs.Length);
 		}
 
-		private static void CreateEmptyFile(int size)
+		private static void CreateEmptyFile(string name, int size)
 		{
-			if (File.Exists("Empty"))
-				File.Create("Empty").Close();
-			var file = File.Create("Empty");
-			file.Seek(size - 1, SeekOrigin.Begin);
-			file.WriteByte(0);
+			if (File.Exists(name))
+				File.Create(name).Close();
+			var file = File.Create(name);
+			if (size != 0)
+			{
+				file.Seek(size - 1, SeekOrigin.Begin);
+				file.WriteByte(0);
+			}
 			file.Dispose();
 		}
 
@@ -185,7 +224,7 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanListTransactions()
 		{
-			foreach (bool allowTrieCache in new[] {  true })
+			foreach (bool allowTrieCache in new[] {  false })
 			foreach (bool cacheStorageLayer in new[] { true })
 			{
 				logs.WriteLine($"allowTrieCache: {allowTrieCache}");

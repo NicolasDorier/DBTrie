@@ -14,11 +14,16 @@ namespace DBTrie.TrieModel
 {
 	public class LTrieRootNode
 	{
+		static readonly byte[] DBreezeMagic;
+		static LTrieRootNode()
+		{
+			DBreezeMagic = UTF8Encoding.UTF8.GetBytes("dbreeze.tiesky.com");
+		}
 		public LTrie Trie { get; }
 		public long LinkToZero { get; set; }
 		public long RecordCount { get; set; }
 
-		LTrieRootNode(LTrie trie, long linkToZero, long recordCount)
+		internal LTrieRootNode(LTrie trie, long linkToZero, long recordCount)
 		{
 			Trie = trie;
 			LinkToZero = linkToZero;
@@ -29,9 +34,29 @@ namespace DBTrie.TrieModel
 		{
 			if (trie == null)
 				throw new ArgumentNullException(nameof(trie));
+			if (memory.Span[0] != 1)
+				throw new FormatException("Impossible to parse the trie");
+			if (memory.Span[1] != 1)
+				throw new FormatException("Impossible to parse the trie");
 			var link = (long)memory.Span.Slice(2, Sizes.DefaultPointerLen).BigEndianToLongDynamic();
 			var count = (long)memory.Span.Slice(2 + Sizes.DefaultPointerLen, 8).BigEndianToLongDynamic();
+			if (DBreezeMagic.AsSpan().SequenceCompareTo(memory.Span.Slice(2 + Sizes.DefaultPointerLen + 8, DBreezeMagic.Length)) != 0)
+				throw new FormatException("Impossible to parse the trie");
 			return new LTrieRootNode(trie, link, count);
+		}
+		internal static int WriteNew(Span<byte> output)
+		{
+			int i = 0;
+			output[i++] = 1;
+			output[i++] = 1;
+			int linkToNode = i;
+			i += Sizes.DefaultPointerLen;
+			i += 8;
+			DBreezeMagic.CopyTo(output.Slice(i));
+			i += DBreezeMagic.Length;
+			output.Slice(linkToNode).ToBigEndianDynamic((ulong)i);
+			i += LTrieGenerationNode.WriteNew(output.Slice(i), 1);
+			return i;
 		}
 
 		public ValueTask<LTrieGenerationNode> ReadGenerationNode()

@@ -110,15 +110,28 @@ namespace DBTrie.TrieModel
 			}
 		}
 
+		internal static int WriteNew(Span<byte> output, int neededSlots)
+		{
+			var reservedSlots = LTrieGenerationNode.GetSlotReservationCount(neededSlots);
+			var nodeSize = GetNodeSize(reservedSlots);
+			output.ToBigEndian((ushort)(nodeSize - 2));
+			output.Slice(2).ToBigEndianDynamic(0);
+			output.Slice(2 + Sizes.DefaultPointerLen, reservedSlots * Sizes.KidLength).Fill(0);
+			return nodeSize;
+		}
+
 		private async ValueTask<long> WriteNewNode(int neededSlots)
 		{
 			var reservedSlots = LTrieGenerationNode.GetSlotReservationCount(neededSlots);
-			var nodeSize = 2 + Sizes.DefaultPointerLen + (reservedSlots * Sizes.KidLength);
+			var nodeSize = GetNodeSize(reservedSlots);
 			using var owner = Trie.MemoryPool.Rent(nodeSize);
-			owner.Memory.Span.ToBigEndian((ushort)(nodeSize - 2));
-			owner.Memory.Span.Slice(2).ToBigEndianDynamic(0);
-			owner.Memory.Span.Slice(2 + Sizes.DefaultPointerLen, reservedSlots * Sizes.KidLength).Fill(0);
+			WriteNew(owner.Memory.Span, neededSlots);
 			return await Trie.Storage.WriteToEnd(owner.Memory.Slice(0, nodeSize));
+		}
+
+		private static int GetNodeSize(int reservedSlots)
+		{
+			return 2 + Sizes.DefaultPointerLen + (reservedSlots * Sizes.KidLength);
 		}
 
 		/// <summary>

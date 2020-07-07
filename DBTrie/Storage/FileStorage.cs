@@ -44,9 +44,10 @@ namespace DBTrie.Storage
 			await _fsData.WriteAsync(input);
 		}
 
-		public ValueTask DisposeAsync()
+		public async ValueTask DisposeAsync()
 		{
-			return _fsData.DisposeAsync();
+			await _fsData.FlushAsync();
+			await _fsData.DisposeAsync();
 		}
 
 		public async ValueTask Rezise(long newLength)
