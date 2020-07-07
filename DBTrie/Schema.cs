@@ -16,9 +16,9 @@ namespace DBTrie
 		}
 		static ReadOnlyMemory<byte> LastFileNumberKey { get; }
 		static ReadOnlyMemory<byte> UserTableKey { get; }
-		public LTrie Trie { get; }
+		internal LTrie Trie { get; }
 
-		public Schema(LTrie trie)
+		internal Schema(LTrie trie)
 		{
 			if (trie == null)
 				throw new ArgumentNullException(nameof(trie));
@@ -27,7 +27,7 @@ namespace DBTrie
 
 		public async ValueTask<ulong> GetLastFileNumber()
 		{
-			var key = await Trie.RootNode.GetRow(LastFileNumberKey);
+			var key = await Trie.GetRow(LastFileNumberKey);
 			if (key is null)
 				throw new KeyNotFoundException("@@@@LastFileNumber table does not exists");
 			return await key.ReadAsULong();
@@ -36,16 +36,16 @@ namespace DBTrie
 		public async ValueTask<bool> TableExists(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.RootNode.GetRow(owner.Memory);
+			var key = await Trie.GetRow(owner.Memory);
 			return key is LTrieRow;
 		}
 		public async ValueTask<ulong> GetFileNameOrCreate(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.RootNode.GetRow(owner.Memory);
+			var key = await Trie.GetRow(owner.Memory);
 			if (key is null)
 			{
-				var lastNumberKey = await Trie.RootNode.GetRow(LastFileNumberKey);
+				var lastNumberKey = await Trie.GetRow(LastFileNumberKey);
 				if (lastNumberKey is null)
 					throw new KeyNotFoundException("@@@@LastFileNumber table does not exists");
 				var lastFileNumber = await lastNumberKey.ReadAsULong();
@@ -53,7 +53,7 @@ namespace DBTrie
 				var bytes = new byte[10];
 				bytes[1] = 1;
 				bytes.AsSpan().Slice(2).ToBigEndian(lastFileNumber);
-				await Trie.RootNode.SetKey(owner.Memory, bytes);
+				await Trie.SetKey(owner.Memory, bytes);
 				await lastNumberKey.Write(lastFileNumber);
 				return lastFileNumber;
 			}
@@ -78,7 +78,7 @@ namespace DBTrie
 		public async IAsyncEnumerable<string> GetTables(string? startWith = null)
 		{
 			using var key = this.GetTableNameBytes(startWith);
-			await foreach (var value in Trie.RootNode.EnumerateStartWith(key.Memory))
+			await foreach (var value in Trie.EnumerateStartWith(key.Memory))
 			{
 				yield return Encoding.UTF8.GetString(value.Key.Span.Slice(3));
 			}

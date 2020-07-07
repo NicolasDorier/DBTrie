@@ -24,13 +24,13 @@ namespace DBTrie.Storage
 			owner.Memory.Span.ToBigEndianDynamic((ulong)pointer);
 			await Storage.Write(position, owner.Memory.Slice(0, Sizes.DefaultPointerLen));
 		}
-		internal async ValueTask WriteKid(long position, byte kid, bool linkToNode, long pointer)
+		internal async ValueTask WriteExternalLink(long position, byte label, bool linkToNode, long pointer)
 		{
 			using var owner = MemoryPool.Rent(2 + Sizes.DefaultPointerLen);
-			owner.Memory.Span[0] = kid;
+			owner.Memory.Span[0] = label;
 			owner.Memory.Span[1] = (byte)(linkToNode ? 0 : 1);
 			owner.Memory.Span.Slice(2).ToBigEndianDynamic((ulong)pointer);
-			await Storage.Write(position, owner.Memory.Slice(0, Sizes.KidLength));
+			await Storage.Write(position, owner.Memory.Slice(0, Sizes.ExternalLinkLength));
 		}
 
 		internal async ValueTask WriteLong(long position, long value)

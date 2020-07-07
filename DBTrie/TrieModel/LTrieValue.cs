@@ -6,9 +6,9 @@ using System.Text;
 namespace DBTrie.TrieModel
 {
 	//1byte - protocol, FullKeyLen (2 bytes), FullValueLen (4 bytes),[Reserved Space For Update- 4 bytes],FullKey,FullValue
-	internal class LTrieKidRecord : IDisposable
+	internal class LTrieValue : IDisposable
 	{
-		public LTrieKidRecord(IMemoryOwner<byte> key)
+		public LTrieValue(IMemoryOwner<byte> key)
 		{
 			this.key = key;
 		}
@@ -64,7 +64,7 @@ namespace DBTrie.TrieModel
 			return i;
 		}
 
-		public static int GetRecordSize(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		public static int GetSize(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			return 11 + key.Length + value.Length;
 		}

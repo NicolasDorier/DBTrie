@@ -1,0 +1,18 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace DBTrie.TrieModel
+{
+	public class Link
+	{
+		public Link(byte? label)
+		{
+			Label = label;
+		}
+		public byte? Label { get; }
+		public long Pointer { get; set; }
+		public long OwnPointer { get; set; }
+		public bool LinkToNode { get; set; } = true;
+	}
+}
