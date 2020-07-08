@@ -568,7 +568,7 @@ namespace DBTrie.Tests
 			{
 				using var tx = await engine.OpenTransaction();
 				// Open existing table
-				var table = await tx.GetOrCreateTable("Transactions");
+				var table = tx.GetOrCreateTable("Transactions");
 				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
 				await table.Insert("test", "value");
 			}
@@ -576,7 +576,7 @@ namespace DBTrie.Tests
 			{
 				using var tx = await engine.OpenTransaction();
 				// Open existing table
-				var table = await tx.GetOrCreateTable("Transactions");
+				var table = tx.GetOrCreateTable("Transactions");
 				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
 				Assert.Null(await table.Get("test"));
 			}
@@ -584,7 +584,7 @@ namespace DBTrie.Tests
 			{
 				using var tx = await engine.OpenTransaction();
 				// Open existing table
-				var table = await tx.GetOrCreateTable("Transactions");
+				var table = tx.GetOrCreateTable("Transactions");
 				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
 				await table.Insert("test", "value");
 				var row = await table.Get("test");
@@ -600,7 +600,7 @@ namespace DBTrie.Tests
 			{
 				using var tx = await engine.OpenTransaction();
 				// Open existing table
-				var table = await tx.GetOrCreateTable("Transactions");
+				var table = tx.GetOrCreateTable("Transactions");
 				Assert.Equal(7818, (await table.GetTrie()).RecordCount);
 				var row = await table.Get("test");
 				Assert.NotNull(row);
@@ -610,7 +610,7 @@ namespace DBTrie.Tests
 			await using (var engine = await CreateEngine())
 			{
 				using var tx = await engine.OpenTransaction();
-				var table = await tx.GetOrCreateTable("Transactions");
+				var table = tx.GetOrCreateTable("Transactions");
 				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
 				await table.Insert("test", "value");
 				var row = await table.Get("test");

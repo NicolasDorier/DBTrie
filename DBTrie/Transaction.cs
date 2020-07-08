@@ -15,7 +15,7 @@ namespace DBTrie
 	{
 		Dictionary<string, Table> _Tables = new Dictionary<string, Table>();
 		TaskCompletionSource<bool> _Completion;
-		DBTrieEngine _Engine;
+		internal DBTrieEngine _Engine;
 		public Transaction(DBTrieEngine engine)
 		{
 			_Completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -35,14 +35,11 @@ namespace DBTrie
 			return s;
 		}
 
-		public async ValueTask<Table> GetOrCreateTable(string tableName)
+		public Table GetOrCreateTable(string tableName)
 		{
 			if (TryGetTable(tableName, out var table) && table is Table)
 				return table;
-			var schema = await GetSchema();
-			var fileName = await schema.GetFileNameOrCreate(tableName);
-			var tableFs = await _Engine.Storages.OpenStorage(fileName.ToString());
-			table = new Table(tableFs, _Engine.ConsistencyCheck);
+			table = new Table(this, tableName, _Engine.ConsistencyCheck);
 			_Tables.Add(tableName, table);
 			return table;
 		}

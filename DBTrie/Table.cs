@@ -12,12 +12,29 @@ namespace DBTrie
 {
 	public class Table
 	{
-		private readonly CacheStorage cache;
+		private CacheStorage? cache;
+		private readonly Transaction tx;
+		private readonly string tableName;
 		bool checkConsistency;
-		internal Table(IStorage storage, bool checkConsistency, int pageSize = Sizes.DefaultPageSize)
+		private readonly int pageSize;
+
+		internal Table(Transaction tx, string tableName, bool checkConsistency, int pageSize = Sizes.DefaultPageSize)
 		{
+			this.tx = tx;
+			this.tableName = tableName;
 			this.checkConsistency = checkConsistency;
-			this.cache = new CacheStorage(storage, true, pageSize);
+			this.pageSize = pageSize;
+		}
+
+		async ValueTask<CacheStorage> GetCacheStorage()
+		{
+			if (cache is CacheStorage)
+				return cache;
+			var schema = await tx.GetSchema();
+			var fileName = await schema.GetFileNameOrCreate(tableName);
+			var tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
+			cache = new CacheStorage(tableFs, true, pageSize);
+			return cache;
 		}
 
 		LTrie? trie;
@@ -26,18 +43,20 @@ namespace DBTrie
 		{
 			if (trie is LTrie)
 				return trie;
-			trie = await LTrie.OpenOrInitFromStorage(this.cache);
+			trie = await LTrie.OpenOrInitFromStorage(await GetCacheStorage());
 			trie.ConsistencyCheck = checkConsistency;
 			return trie;
 		}
 
 		internal async ValueTask Commit()
 		{
+			if (this.cache is null)
+				return;
 			await this.cache.Flush();
 		}
 		internal void Rollback()
 		{
-			if (this.cache.Clear())
+			if (this.cache is CacheStorage c && c.Clear())
 				trie = null;
 		}
 
@@ -54,14 +73,17 @@ namespace DBTrie
 
 		internal async ValueTask DisposeAsync()
 		{
-			this.cache.Clear();
-			await cache.DisposeAsync();
+			if (cache is CacheStorage)
+			{
+				this.cache.Clear();
+				await cache.DisposeAsync();
+			}
 			trie = null;
 		}
 
-		internal ValueTask Reserve()
+		internal async ValueTask Reserve()
 		{
-			return this.cache.Reserve();
+			 await (await this.GetCacheStorage()).Reserve();
 		}
 		public async ValueTask<bool> Insert(string key, string value)
 		{
