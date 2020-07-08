@@ -326,7 +326,7 @@ namespace DBTrie.TrieModel
 			// In this case, we don't have an exact match, and no children either
 			if (res.ValueLink is null && res.MissingValue is byte)
 				yield break;
-			if (res.ValueLink is Link)
+			if (res.ValueLink is Link l && l.Label is null)
 			{
 				using var record = await ReadValue(res.ValueLink.Pointer);
 				if (record.Key.Span.StartsWith(startWithKey.Span))

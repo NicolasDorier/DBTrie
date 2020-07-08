@@ -457,6 +457,12 @@ namespace DBTrie.Tests
 							Assert.Equal(k, await trie.GetValueString(k));
 						}
 						Assert.Equal(countBefore + keys.Length, trie.RecordCount);
+						for (int f = 0; f < fromShortest.Length; f++)
+						{
+							var all = await trie.EnumerateStartsWith(fromShortest[f]).ToArrayAsync();
+							Assert.Equal(keys.Length - f, all.Length);
+							Assert.Equal(all.Length, all.Distinct().Count());
+						}
 					}
 					countBefore = trie.RecordCount;
 					// Everything kept value
@@ -639,6 +645,9 @@ namespace DBTrie.Tests
 				using var tx = await engine.OpenTransaction();
 				var table = tx.GetOrCreateTable("MyTable");
 				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
+
+				var elements = await table.Enumerate("qweq").ToArrayAsync();
+				Assert.Single(elements);
 			}
 		}
 
