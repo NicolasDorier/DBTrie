@@ -17,7 +17,7 @@ static async Task Main(string args)
 	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		var tx = await engine.OpenTransaction();
-		var table = await tx.GetOrCreateTable("MyTable");
+		var table = tx.GetOrCreateTable("MyTable");
 		await table.Insert("MyKey", "MyValue");
 		await tx.Commit();
 	}
@@ -49,7 +49,7 @@ static async Task Main(string args)
 	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		// ...
-		var table = await tx.GetOrCreateTable("MyTable");
+		var table = tx.GetOrCreateTable("MyTable");
 		await foreach (var item in table.Enumerate(startsWith: "Ke"))
 		{
 			using (item)
