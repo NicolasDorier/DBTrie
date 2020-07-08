@@ -70,8 +70,8 @@ namespace DBTrie
 		{
 			// If already committed, this is no-op
 			Rollback();
-			_Engine.Return(this);
 			_Completion.SetResult(true);
+			_Engine.Return(this);
 		}
 		internal async ValueTask RealDispose()
 		{

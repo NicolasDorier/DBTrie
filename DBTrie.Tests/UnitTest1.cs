@@ -444,9 +444,6 @@ namespace DBTrie.Tests
 						foreach (var k in keys)
 						{
 							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-							if (i == 42)
-							{
-							}
 							Assert.True(await trie.SetKey(k, k));
 							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
 							Assert.Equal(k, await trie.GetValueString(k));
@@ -648,6 +645,17 @@ namespace DBTrie.Tests
 
 				var elements = await table.Enumerate("qweq").ToArrayAsync();
 				Assert.Single(elements);
+			}
+
+			{
+				var engine = await CreateEmptyEngine(false);
+				var tx = await engine.OpenTransaction();
+				// stopping the engine should wait for the last transaction to be finished
+				var disposing = engine.DisposeAsync();
+				await Task.Delay(100);
+				Assert.False(disposing.IsCompleted);
+				tx.Dispose();
+				await disposing;
 			}
 		}
 
