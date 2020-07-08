@@ -166,6 +166,13 @@ namespace DBTrie.TrieModel
 			return nodeSize;
 		}
 
+		public static int GetSize(int neededSlots)
+		{
+			var reservedSlots = LTrieNode.GetSlotReservationCount(neededSlots);
+			return 2 + Sizes.DefaultPointerLen + (reservedSlots * Sizes.ExternalLinkLength);
+		}
+
+
 		private async ValueTask<long> WriteNewNode(int neededSlots)
 		{
 			var reservedSlots = LTrieNode.GetSlotReservationCount(neededSlots);

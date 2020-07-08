@@ -22,6 +22,9 @@
     <None Update="Data\10000007">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Data\10004281">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Data\_DBreezeSchema">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

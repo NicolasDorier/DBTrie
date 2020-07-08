@@ -9,6 +9,7 @@ namespace DBTrie
 {
 	public class Schema
 	{
+		public const string StorageName = "_DBreezeSchema";
 		static Schema()
 		{
 			LastFileNumberKey = Encoding.UTF8.GetBytes("@@@@LastFileNumber").AsMemory().ToReadOnly();
@@ -26,22 +27,22 @@ namespace DBTrie
 
 		internal static async ValueTask<Schema> OpenFromTrie(LTrie trie)
 		{
-			var key = await trie.GetRow(LastFileNumberKey);
+			var key = await trie.GetValue(LastFileNumberKey);
 			if (key is null)
 				throw new FormatException("Impossible to parse the schema");
-			return new Schema(trie, await key.ReadAsULong());
+			return new Schema(trie, await key.ReadValueULong());
 		}
 
 		public async ValueTask<bool> TableExists(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.GetRow(owner.Memory);
-			return key is LTrieRow;
+			var key = await Trie.GetValue(owner.Memory);
+			return key is LTrieValue;
 		}
 		public async ValueTask<ulong> GetFileNameOrCreate(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.GetRow(owner.Memory);
+			var key = await Trie.GetValue(owner.Memory);
 			if (key is null)
 			{
 				var fileNumber = LastFileNumber + 1;
@@ -49,10 +50,11 @@ namespace DBTrie
 				bytes[1] = 1;
 				bytes.AsSpan().Slice(2).ToBigEndian(fileNumber);
 				await Trie.SetKey(owner.Memory, bytes);
-				var row = await Trie.GetRow(LastFileNumberKey);
+				var row = await Trie.GetValue(LastFileNumberKey);
 				if (row is null)
 					throw new InvalidOperationException("LastFileNumberKey is not found");
-				await row.Write(fileNumber);
+				await Trie.SetValue(LastFileNumberKey, fileNumber);
+				await Trie.Storage.Flush();
 				LastFileNumber = fileNumber;
 				return fileNumber;
 			}

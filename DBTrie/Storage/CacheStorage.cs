@@ -30,13 +30,14 @@ namespace DBTrie.Storage
 				_owner.Dispose();
 			}
 		}
-		private readonly IStorage inner;
+		public IStorage InnerStorage { get; }
 		internal SortedList<long, CachePage> pages = new SortedList<long, CachePage>();
+
 		private MemoryPool<byte> MemoryPool = MemoryPool<byte>.Shared;
 		bool own;
-		public CacheStorage(IStorage inner, bool ownInner = true, int pageSize = 8192)
+		public CacheStorage(IStorage inner, bool ownInner = true, int pageSize = Sizes.DefaultPageSize)
 		{
-			this.inner = inner;
+			InnerStorage = inner;
 			PageSize = pageSize;
 			_Length = inner.Length;
 			own = ownInner;
@@ -63,7 +64,7 @@ namespace DBTrie.Storage
 		private async Task<CachePage> FetchPage(long p)
 		{
 			var owner = MemoryPool.Rent(PageSize);
-			await inner.Read(p * PageSize, owner.Memory);
+			await InnerStorage.Read(p * PageSize, owner.Memory);
 			var page = new CachePage((int)p, owner);
 			pages.Add(p, page);
 			return page;
@@ -101,14 +102,14 @@ namespace DBTrie.Storage
 
 		public async ValueTask Flush()
 		{
-			await inner.Reserve((int)(Length - inner.Length));
+			await InnerStorage.Reserve((int)(Length - InnerStorage.Length));
 			foreach(var page in pages.Where(p => p.Value.Dirty))
 			{
-				await inner.Write(page.Key * PageSize, page.Value.Content.Slice(page.Value.WrittenStart, page.Value.WrittenLength));
+				await InnerStorage.Write(page.Key * PageSize, page.Value.Content.Slice(page.Value.WrittenStart, page.Value.WrittenLength));
 				page.Value.WrittenStart = 0;
 				page.Value.WrittenLength = 0;
 			}
-			await inner.Flush();
+			await InnerStorage.Flush();
 		}
 
 		/// <summary>
@@ -117,14 +118,29 @@ namespace DBTrie.Storage
 		/// <returns></returns>
 		public async ValueTask Reserve()
 		{
-			await inner.Reserve((int)(Length - inner.Length));
+			await InnerStorage.Reserve((int)(Length - InnerStorage.Length));
+		}
+
+		/// <summary>
+		/// Remove written page from cache
+		/// </summary>
+		/// <returns>true if at least a single page got removed</returns>
+		public bool Clear()
+		{
+			bool removed = false;
+			foreach (var page in pages.Where(p => p.Value.Dirty).ToList())
+			{
+				pages.Remove(page.Key);
+				removed = true;
+			}
+			return removed;
 		}
 
 		public async ValueTask DisposeAsync()
 		{
 			await Flush();
 			if (own)
-				await inner.DisposeAsync();
+				await InnerStorage.DisposeAsync();
 			foreach (var page in pages)
 				page.Value.Dispose();
 			pages.Clear();

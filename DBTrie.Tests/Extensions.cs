@@ -24,14 +24,6 @@ namespace DBTrie.Tests
         {
             return array[rng.Next(0, array.Length)];
         }
-        public static async Task SetKey(this LTrie trie, string key, string value)
-        {
-            await trie.SetKey(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(value));
-        }
-        public static async Task<bool> DeleteRow(this LTrie trie, string key)
-        {
-            return await trie.DeleteRow(Encoding.UTF8.GetBytes(key));
-        }
 
         public static async Task Write(this IStorage storage, long position, string txt)
         {
@@ -46,15 +38,6 @@ namespace DBTrie.Tests
             var bytes = new byte[length];
             await storage.Read(position, bytes);
             return Encoding.UTF8.GetString(bytes);
-        }
-        public static async Task<string?> GetValue(this LTrie trie, string key)
-        {
-            var result = await trie.GetRow(Encoding.UTF8.GetBytes(key));
-            if (result is null)
-                return null;
-            var v = new byte[result.ValueLength];
-            await result.ReadValue(v);
-            return Encoding.UTF8.GetString(v);
         }
     }
 }

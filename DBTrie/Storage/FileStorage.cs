@@ -9,24 +9,14 @@ namespace DBTrie.Storage
 	public class FileStorage : IStorage, IAsyncDisposable
 	{
 		string _fileName;
-		int _fileStreamBufferSize = 8192;
 		private FileStream _fsData;
-		//private readonly FileStream _fsRollback;
-		//private readonly FileStream _fsRollbackHelper;
 
-		public FileStorage(string fileName)
+		public FileStorage(string fileName, int bufferSize = Sizes.DefaultPageSize)
 		{
 			if (fileName == null)
 				throw new ArgumentNullException(nameof(fileName));
 			_fileName = fileName;
-			this._fsData = OpenFile();
-			//this._fsRollback = new FileStream(this._fileName + ".rol", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, _fileStreamBufferSize, FileOptions.WriteThrough);
-			//this._fsRollbackHelper = new FileStream(this._fileName + ".rhp", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, _fileStreamBufferSize, FileOptions.WriteThrough);
-		}
-
-		private FileStream OpenFile()
-		{
-			return new FileStream(this._fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, _fileStreamBufferSize, FileOptions.Asynchronous);
+			this._fsData = new FileStream(this._fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize, FileOptions.Asynchronous);
 		}
 
 		public long Length => _fsData.Length;

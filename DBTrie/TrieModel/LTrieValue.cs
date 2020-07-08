@@ -2,28 +2,54 @@
 using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace DBTrie.TrieModel
 {
 	//1byte - protocol, FullKeyLen (2 bytes), FullValueLen (4 bytes),[Reserved Space For Update- 4 bytes],FullKey,FullValue
-	internal class LTrieValue : IDisposable
+	internal class LTrieValue : IRow
 	{
-		public LTrieValue(IMemoryOwner<byte> key)
+		LTrie trie;
+		public LTrieValue(LTrie trie, IMemoryOwner<byte> key, int valueLength)
 		{
+			this.trie = trie;
 			this.key = key;
+			this.ValueLength = valueLength;
 		}
 		readonly IMemoryOwner<byte> key;
-		public Memory<byte> Key => key.Memory;
+		IMemoryOwner<byte>? value;
+		public ReadOnlyMemory<byte> Key => key.Memory;
 		/// <summary>
 		/// If 1, then ValueMaxLength is saved on a 4 bytes field
 		/// If 0, then ValueMaxLength is not serialized but equals to ValueLength
 		/// </summary>
 		public byte Protocol;
 		public int KeyLength => Key.Length;
-		public int ValueLength;
+		public int ValueLength { get; }
 		public long ValuePointer;
 		public int ValueMaxLength;
 		internal long Pointer;
+
+		public async ValueTask<ReadOnlyMemory<byte>> ReadValue()
+		{
+			if (value is IMemoryOwner<byte> v)
+				return v.Memory;
+			v = trie.MemoryPool.Rent(ValueLength);
+			await trie.Storage.Read(ValuePointer, v.Memory.Slice(0, ValueLength));
+			v = v.Slice(0, ValueLength);
+			value = v;
+			return v.Memory;
+		}
+		public async ValueTask<string> ReadValueString()
+		{
+			return Encoding.UTF8.GetString((await ReadValue()).Span);
+		}
+		public async ValueTask<ulong> ReadValueULong()
+		{
+			if (ValueLength != 8)
+				throw new InvalidOperationException("This value is not ulong");
+			return (await ReadValue()).Span.ReadUInt64BigEndian();
+		}
 
 		public static int WriteToSpan(Span<byte> output, ReadOnlySpan<byte> key, ReadOnlySpan<byte> newValue)
 		{
@@ -72,6 +98,7 @@ namespace DBTrie.TrieModel
 		public void Dispose()
 		{
 			this.key.Dispose();
+			this.value?.Dispose();
 		}
 	}
 }

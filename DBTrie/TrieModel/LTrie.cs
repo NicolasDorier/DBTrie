@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Data.SqlTypes;
 using System.Drawing;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -16,6 +17,18 @@ namespace DBTrie.TrieModel
 		{
 			DBreezeMagic = UTF8Encoding.UTF8.GetBytes("dbreeze.tiesky.com");
 		}
+
+		public static async ValueTask<LTrie> OpenOrInitFromStorage(IStorage storage, MemoryPool<byte>? memoryPool = null)
+		{
+			try
+			{
+				return await OpenFromStorage(storage, memoryPool);
+			}
+			catch (FormatException)
+			{
+				return await InitTrie(storage, memoryPool);
+			}
+		}
 		public static async ValueTask<LTrie> OpenFromStorage(IStorage storage, MemoryPool<byte>? memoryPool = null)
 		{
 			if (storage == null)
@@ -26,6 +39,30 @@ namespace DBTrie.TrieModel
 			await storage.Read(0, mem);
 			return OpenFromSpan(storage, mem.Span, memoryPool);
 		}
+
+		public async ValueTask<bool> SetKey(string key, string value)
+		{
+			var keyCount = Encoding.UTF8.GetByteCount(key);
+			var valueCount = Encoding.UTF8.GetByteCount(value);
+			using var owner = MemoryPool.Rent(keyCount + valueCount);
+			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
+			Encoding.UTF8.GetBytes(value, owner.Memory.Span.Slice(keyCount));
+			return await SetKey(owner.Memory.Slice(0, keyCount), owner.Memory.Slice(keyCount, valueCount));
+		}
+		public async ValueTask<bool> SetValue(string key, ReadOnlyMemory<byte> value)
+		{
+			var keyCount = Encoding.UTF8.GetByteCount(key);
+			using var owner = MemoryPool.Rent(keyCount);
+			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
+			return await SetKey(owner.Memory.Slice(0, keyCount), value);
+		}
+		internal async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ulong value)
+		{
+			using var owner = MemoryPool.Rent(8);
+			owner.Memory.Span.ToBigEndian(value);
+			return await SetKey(key, owner.Memory.Slice(0, 8));
+		}
+
 		public static LTrie OpenFromSpan(IStorage storage, ReadOnlySpan<byte> span, MemoryPool<byte>? memoryPool = null)
 		{
 			if (storage == null)
@@ -43,9 +80,11 @@ namespace DBTrie.TrieModel
 		public static async ValueTask<LTrie> InitTrie(IStorage storage, MemoryPool<byte>? memoryPool = null)
 		{
 			memoryPool ??= MemoryPool<byte>.Shared;
-			using var owner = memoryPool.Rent(Sizes.RootSize);
-			var memory = owner.Memory.Slice(0, WriteNew(owner.Memory.Span));
-			await storage.Write(0, memory);
+			var rootAndNodeSize = Sizes.RootSize + LTrieNode.GetSize(1);
+			using var owner = memoryPool.Rent(rootAndNodeSize);
+			WriteRoot(owner.Memory.Span);
+			LTrieNode.WriteNew(owner.Memory.Span.Slice(Sizes.RootSize), 1);
+			await storage.Write(0, owner.Memory.Slice(0, rootAndNodeSize));
 			return await OpenFromStorage(storage);
 		}
 
@@ -82,11 +121,10 @@ namespace DBTrie.TrieModel
 			}
 			bool nullValue = (memory.Span[3] & 0x80) != 0;
 			int valueSize = (int)(nullValue ? 0U : memory.ToReadOnly().Span.Slice(3).ReadUInt32BigEndian());
-			return new LTrieValue(owner.Slice(headerSize, keySize))
+			return new LTrieValue(this, owner.Slice(headerSize, keySize), valueSize)
 			{
 				Protocol = protocol,
 				Pointer = pointer,
-				ValueLength = valueSize,
 				ValuePointer = pointer + headerSize + keySize,
 				ValueMaxLength = protocol == 0 ? valueSize : (int)memory.Slice(7).ToReadOnly().Span.ReadUInt32BigEndian()
 			};
@@ -131,19 +169,18 @@ namespace DBTrie.TrieModel
 		public long RecordCount { get; private set; }
 
 
-		internal static int WriteNew(Span<byte> output)
+		internal static void WriteRoot(Span<byte> output)
 		{
 			int i = 0;
 			output[i++] = 1;
 			output[i++] = 1;
-			int linkToNode = i;
+			output.Slice(i).ToBigEndianDynamic(64);
 			i += Sizes.DefaultPointerLen;
+			output.Slice(i, 8).Fill(0);
 			i += 8;
 			DBreezeMagic.CopyTo(output.Slice(i));
 			i += DBreezeMagic.Length;
-			output.Slice(linkToNode).ToBigEndianDynamic((ulong)i);
-			i += LTrieNode.WriteNew(output.Slice(i), 1);
-			return i;
+			output.Slice(i, Sizes.RootSize - i).Fill(0);
 		}
 
 		public ValueTask<LTrieNode> ReadNode()
@@ -172,13 +209,21 @@ namespace DBTrie.TrieModel
 			return node;
 		}
 
-		public async ValueTask<LTrieRow?> GetKey(string key)
+		public async ValueTask<LTrieValue?> GetKey(string key)
 		{
 			using var owner = GetNameAsBytes(key);
-			return await GetRow(owner.Memory);
+			return await GetValue(owner.Memory);
+		}
+		public async ValueTask<string?> GetValueString(string key)
+		{
+			using var owner = GetNameAsBytes(key);
+			var val = await GetValue(owner.Memory);
+			if (val is null)
+				return null;
+			return await val.ReadValueString();
 		}
 
-		public async ValueTask SetKey(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		public async ValueTask<bool> SetKey(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			var res = await FindBestMatch(key);
 			bool increaseRecord = false;
@@ -211,42 +256,47 @@ namespace DBTrie.TrieModel
 				// we replace the internal value
 				if (res.BestNode.MinKeyLength == key.Length)
 				{
+					increaseRecord = false;
 					await res.BestNode.SetInternalValue(key, value);
-					return;
-				}
-				var record = await ReadValue(res.ValueLink.Pointer);
-				// We are replacing a child with the same key
-				if (record.Key.Span.SequenceEqual(key.Span))
-				{
-					await res.BestNode.SetValue(res.ValueLink.Label, key, value);
-					return;
-				}
-
-				var prev = res.BestNodeParent;
-				var gn = res.BestNode;
-				var maxCommonKeyLength = Math.Min(key.Length, record.Key.Length);
-				// We need to convert the value child to a node
-				// For this, we expand nodes until there is divergence of key between record key and the search key
-				for (int i = res.KeyIndex; i < maxCommonKeyLength; i++)
-				{
-					if (key.Span[i] != record.Key.Span[i])
-						break;
-					var oldPointer = gn.OwnPointer;
-					var link = await gn.SetValueLinkToNode(key.Span[i]);
-					prev = gn;
-					await gn.AssertConsistency();
-					gn = await ReadNode(link.Pointer, prev.MinKeyLength + 1);
-				}
-				increaseRecord = true;
-				if (gn.MinKeyLength == key.Length)
-				{
-					await gn.SetInternalValue(key, value);
 				}
 				else
 				{
-					await gn.SetExternalValue(key.Span[gn.MinKeyLength], key, value);
+					var record = await ReadValue(res.ValueLink.Pointer);
+					// We are replacing a child with the same key
+					if (record.Key.Span.SequenceEqual(key.Span))
+					{
+						increaseRecord = false;
+						await res.BestNode.SetValue(res.ValueLink.Label, key, value);
+					}
+					else
+					{
+						var prev = res.BestNodeParent;
+						var gn = res.BestNode;
+						var maxCommonKeyLength = Math.Min(key.Length, record.Key.Length);
+						// We need to convert the value child to a node
+						// For this, we expand nodes until there is divergence of key between record key and the search key
+						for (int i = res.KeyIndex; i < maxCommonKeyLength; i++)
+						{
+							if (key.Span[i] != record.Key.Span[i])
+								break;
+							var oldPointer = gn.OwnPointer;
+							var link = await gn.SetValueLinkToNode(key.Span[i]);
+							prev = gn;
+							await gn.AssertConsistency();
+							gn = await ReadNode(link.Pointer, prev.MinKeyLength + 1);
+						}
+						increaseRecord = true;
+						if (gn.MinKeyLength == key.Length)
+						{
+							await gn.SetInternalValue(key, value);
+						}
+						else
+						{
+							await gn.SetExternalValue(key.Span[gn.MinKeyLength], key, value);
+						}
+						await gn.AssertConsistency();
+					}
 				}
-				await gn.AssertConsistency();
 			}
 			if (increaseRecord)
 			{
@@ -255,6 +305,7 @@ namespace DBTrie.TrieModel
 				// Update in-memory
 				RecordCount++;
 			}
+			return increaseRecord;
 		}
 
 		internal async IAsyncEnumerable<LTrieValue> EnumerateStartWith(string startWithKey)
@@ -310,14 +361,14 @@ namespace DBTrie.TrieModel
 				}
 			}
 		}
-		public async ValueTask<LTrieRow?> GetRow(string key)
+		public async ValueTask<LTrieValue?> GetValue(string key)
 		{
 			var c = Encoding.UTF8.GetByteCount(key, 0, key.Length);
 			using var owner = MemoryPool.Rent(c);
 			Encoding.UTF8.GetBytes(key, owner.Memory.Span.Slice(0, c));
-			return await GetRow(owner.Memory.Slice(0, c));
+			return await GetValue(owner.Memory.Slice(0, c));
 		}
-		public async ValueTask<LTrieRow?> GetRow(ReadOnlyMemory<byte> key)
+		public async ValueTask<LTrieValue?> GetValue(ReadOnlyMemory<byte> key)
 		{
 			var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
@@ -325,12 +376,12 @@ namespace DBTrie.TrieModel
 			using var r = await ReadValue(res.ValueLink.Pointer);
 			if (r.Key.Span.SequenceCompareTo(key.Span) != 0)
 				return null;
-			return new LTrieRow(Storage, key)
-			{
-				Pointer = res.ValueLink.Pointer,
-				ValueLength = r.ValueLength,
-				ValuePointer = r.ValuePointer
-			};
+			return r;
+		}
+		public async Task<bool> DeleteRow(string key)
+		{
+			using var owner = GetNameAsBytes(key);
+			return await this.DeleteRow(owner.Memory);
 		}
 		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
 		{

@@ -34,26 +34,26 @@ namespace DBTrie.Tests
 			var trie = await LTrie.InitTrie(cache);
 			await cache.Flush();
 			trie = await ReloadTrie(trie);
-			Assert.Null(await trie.GetValue(1 + "test" + 1));
+			Assert.Null(await trie.GetValueString(1 + "test" + 1));
 			for (int i = 0; i < 5; i++)
 			{
 				await trie.SetKey(i + "test" + i, "lol" + i);
-				Assert.Equal("lol" + i, await trie.GetValue(i + "test" + i));
+				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
 			}
 			for (int i = 0; i < 5; i++)
 			{
-				Assert.Equal("lol" + i, await trie.GetValue(i + "test" + i));
+				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
 			}
 			trie = await LTrie.OpenFromStorage(fs);
 			for (int i = 0; i < 5; i++)
 			{
-				Assert.Null(await trie.GetValue(i + "test" + i));
+				Assert.Null(await trie.GetValueString(i + "test" + i));
 			}
 			await cache.Flush();
 			trie = await ReloadTrie(trie);
 			for (int i = 0; i < 5; i++)
 			{
-				Assert.Equal("lol" + i, await trie.GetValue(i + "test" + i));
+				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
 			}
 		}
 
@@ -90,10 +90,10 @@ namespace DBTrie.Tests
 			await using (var t = await TrieTester.Create())
 			{
 				await t.Trie.SetKey("test", "lol");
-				Assert.Equal("lol", await t.Trie.GetValue("test"));
+				Assert.Equal("lol", await t.Trie.GetValueString("test"));
 				Assert.True(await t.Trie.DeleteRow("test"));
 				Assert.False(await t.Trie.DeleteRow("test"));
-				Assert.Null(await t.Trie.GetValue("test"));
+				Assert.Null(await t.Trie.GetValueString("test"));
 			}
 			await using (var t = await TrieTester.Create())
 			{
@@ -102,8 +102,8 @@ namespace DBTrie.Tests
 				Assert.Equal(2, t.Trie.RecordCount);
 				Assert.True(await t.Trie.DeleteRow("test"));
 				Assert.False(await t.Trie.DeleteRow("test"));
-				Assert.Null(await t.Trie.GetValue("test"));
-				Assert.Equal("lol2", await t.Trie.GetValue("test2"));
+				Assert.Null(await t.Trie.GetValueString("test"));
+				Assert.Equal("lol2", await t.Trie.GetValueString("test2"));
 				Assert.Equal(1, t.Trie.RecordCount);
 			}
 			await using (var t = await TrieTester.Create())
@@ -112,8 +112,8 @@ namespace DBTrie.Tests
 				await t.Trie.SetKey("test2", "lol2");
 				Assert.True(await t.Trie.DeleteRow("test2"));
 				Assert.False(await t.Trie.DeleteRow("test2"));
-				Assert.Null(await t.Trie.GetValue("test2"));
-				Assert.Equal("lol1", await t.Trie.GetValue("test"));
+				Assert.Null(await t.Trie.GetValueString("test2"));
+				Assert.Equal("lol1", await t.Trie.GetValueString("test"));
 			}
 			await using (var t = await TrieTester.Create())
 			{
@@ -123,12 +123,28 @@ namespace DBTrie.Tests
 				Assert.False(await t.Trie.DeleteRow("test"));
 				Assert.Equal(2, t.Trie.RecordCount);
 				Assert.True(await t.Trie.DeleteRow("test1"));
-				Assert.Null(await t.Trie.GetValue("test1"));
-				Assert.Equal("lol2", await t.Trie.GetValue("test2"));
+				Assert.Null(await t.Trie.GetValueString("test1"));
+				Assert.Equal("lol2", await t.Trie.GetValueString("test2"));
 				Assert.False(await t.Trie.DeleteRow("test1"));
 				Assert.True(await t.Trie.DeleteRow("test2"));
-				Assert.Null(await t.Trie.GetValue("test2"));
+				Assert.Null(await t.Trie.GetValueString("test2"));
 				Assert.Equal(0, t.Trie.RecordCount);
+			}
+			await using (var t = await TrieTester.Create())
+			{
+				Assert.Equal(0, t.Trie.RecordCount);
+				await t.Trie.SetKey("test1", "lol1");
+				await t.Trie.SetKey("test2", "lol2");
+				Assert.True(await t.Trie.SetKey("test", "lol"));
+				Assert.Equal(3, t.Trie.RecordCount);
+				Assert.False(await t.Trie.SetKey("test", "newlol"));
+				Assert.Equal(3, t.Trie.RecordCount);
+				Assert.True(await t.Trie.DeleteRow("test"));
+				Assert.Equal("lol2", await t.Trie.GetValueString("test2"));
+				Assert.Equal("lol1", await t.Trie.GetValueString("test1"));
+				Assert.Equal(2, t.Trie.RecordCount);
+				Assert.True(await t.Trie.SetKey("test", "newlol"));
+				Assert.Equal(3, t.Trie.RecordCount);
 			}
 		}
 
@@ -164,6 +180,10 @@ namespace DBTrie.Tests
 			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length, fs.Length);
 			await fs.Reserve(10);
 			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 10, fs.Length);
+			await fs.Reserve(1);
+			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 11, fs.Length);
+			await fs.Reserve(0);
+			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 11, fs.Length);
 		}
 
 		private static void CreateEmptyFile(string name, int size)
@@ -246,7 +266,7 @@ namespace DBTrie.Tests
 					ordered = tables.OrderBy(o => o).ToArray();
 					Assert.True(tables.SequenceEqual(ordered));
 					Assert.Equal(3, tables.Length);
-					Assert.NotNull(await trie.GetRow("@utTestTa"));
+					Assert.NotNull(await trie.GetValue("@utTestTa"));
 
 					await AssertMatch(trie, false, "POFwoinfOWu");
 					await AssertMatch(trie, false, "@utTestT");
@@ -303,7 +323,7 @@ namespace DBTrie.Tests
 				{
 					logs.WriteLine($"allowTrieCache: {allowTrieCache}");
 					logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
-					await using var fs = CreateFileStorage("10000007", cacheStorageLayer);
+					await using var fs = CreateFileStorage("10004281", cacheStorageLayer);
 					LTrie trie = await CreateTrie(fs, allowTrieCache);
 					trie.ConsistencyCheck = false;
 					DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -341,57 +361,57 @@ namespace DBTrie.Tests
 					var countBefore = trie.RecordCount;
 					Assert.Null(await trie.GetKey("CanSetKeyValue"));
 					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r1");
-					Assert.Equal("CanSetKeyValue-r1", await trie.GetValue("CanSetKeyValue"));
+					Assert.Equal("CanSetKeyValue-r1", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 1, trie.RecordCount);
 					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r2");
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 1, trie.RecordCount);
 					trie = await ReloadTrie(trie);
 					Assert.Equal(countBefore + 1, trie.RecordCount);
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 
 					Assert.Null(await trie.GetKey("Relocation"));
 					await trie.SetKey("Relocation", "a");
-					Assert.Equal("a", await trie.GetValue("Relocation"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
 					Assert.Equal(countBefore + 2, trie.RecordCount);
 
 					Assert.Null(await trie.GetKey("NoRelocation"));
 					await trie.SetKey("NoRelocation", "b");
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 					Assert.Equal(countBefore + 3, trie.RecordCount);
 
 					trie = await ReloadTrie(trie);
-					Assert.Equal("a", await trie.GetValue("Relocation"));
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 3, trie.RecordCount);
 
 					Assert.Null(await trie.GetKey("k"));
 					await trie.SetKey("k", "k-r1");
-					Assert.Equal("k-r1", await trie.GetValue("k"));
+					Assert.Equal("k-r1", await trie.GetValueString("k"));
 					await trie.SetKey("k", "k-r2");
-					Assert.Equal("k-r2", await trie.GetValue("k"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
 					Assert.Equal(countBefore + 4, trie.RecordCount);
 
 					Assert.Null(await trie.GetKey("CanSetKeyValue-Extended"));
 					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r1");
-					Assert.Equal("CanSetKeyValue-Extended-r1", await trie.GetValue("CanSetKeyValue-Extended"));
+					Assert.Equal("CanSetKeyValue-Extended-r1", await trie.GetValueString("CanSetKeyValue-Extended"));
 					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r2");
 					Assert.Equal(countBefore + 5, trie.RecordCount);
 
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValue("k"));
-					Assert.Equal("a", await trie.GetValue("Relocation"));
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 
 					trie = await ReloadTrie(trie);
 
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValue("k"));
-					Assert.Equal("a", await trie.GetValue("Relocation"));
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 					Assert.Equal(countBefore + 5, trie.RecordCount);
 
 					List<string> insertedKeys = new List<string>();
@@ -423,18 +443,18 @@ namespace DBTrie.Tests
 
 						foreach (var k in keys)
 						{
-							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
+							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
 							if (i == 42)
 							{
 							}
-							await trie.SetKey(k, k);
-							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
-							Assert.Equal(k, await trie.GetValue(k));
+							Assert.True(await trie.SetKey(k, k));
+							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+							Assert.Equal(k, await trie.GetValueString(k));
 							insertedKeys.Add(k);
 						}
 						foreach (var k in keys)
 						{
-							Assert.Equal(k, await trie.GetValue(k));
+							Assert.Equal(k, await trie.GetValueString(k));
 						}
 						Assert.Equal(countBefore + keys.Length, trie.RecordCount);
 					}
@@ -442,7 +462,7 @@ namespace DBTrie.Tests
 					// Everything kept value
 					foreach (var k in insertedKeys)
 					{
-						Assert.Equal(k, await trie.GetValue(k));
+						Assert.Equal(k, await trie.GetValueString(k));
 					}
 					// Randomly edit stuff
 					HashSet<string> edited = new HashSet<string>();
@@ -450,7 +470,7 @@ namespace DBTrie.Tests
 					{
 						if (r.Next() % 2 == 0)
 						{
-							await trie.SetKey(k, k + "-r2");
+							Assert.False(await trie.SetKey(k, k + "-r2"));
 							edited.Add(k);
 						}
 					}
@@ -458,7 +478,7 @@ namespace DBTrie.Tests
 					foreach (var k in insertedKeys)
 					{
 						var expected = edited.Contains(k) ? k + "-r2" : k;
-						Assert.Equal(expected, await trie.GetValue(k));
+						Assert.Equal(expected, await trie.GetValueString(k));
 					}
 
 					// Randomly trucate
@@ -467,7 +487,7 @@ namespace DBTrie.Tests
 					{
 						if (r.Next() % 2 == 0)
 						{
-							await trie.SetKey(k, k.GetHashCode().ToString());
+							Assert.False(await trie.SetKey(k, k.GetHashCode().ToString()));
 							truncated.Add(k);
 						}
 					}
@@ -489,25 +509,25 @@ namespace DBTrie.Tests
 					{
 						if (deleted.Contains(k))
 						{
-							Assert.Null(await trie.GetRow(k));
+							Assert.Null(await trie.GetValue(k));
 						}
 						else
 						{
 							var expected =
 							truncated.Contains(k) ? k.GetHashCode().ToString() :
 							edited.Contains(k) ? k + "-r2" : k;
-							Assert.Equal(expected, await trie.GetValue(k));
+							Assert.Equal(expected, await trie.GetValueString(k));
 						}
 					}
 
 					countBefore -= deleted.Count;
 					Assert.Equal(countBefore, trie.RecordCount);
 					// Nothing else got edited
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValue("k"));
-					Assert.Equal("a", await trie.GetValue("Relocation"));
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 
 					// Reload the trie
 					trie = await ReloadTrie(trie);
@@ -516,29 +536,94 @@ namespace DBTrie.Tests
 					{
 						if (deleted.Contains(k))
 						{
-							Assert.Null(await trie.GetRow(k));
+							Assert.Null(await trie.GetValue(k));
 						}
 						else
 						{
 							var expected =
 							truncated.Contains(k) ? k.GetHashCode().ToString() :
 							edited.Contains(k) ? k + "-r2" : k;
-							Assert.Equal(expected, await trie.GetValue(k));
+							Assert.Equal(expected, await trie.GetValueString(k));
 						}
 					}
 					Assert.Equal(countBefore, trie.RecordCount);
 					// Nothing else got edited
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValue("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValue("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValue("k"));
-					Assert.Equal("a", await trie.GetValue("Relocation"));
-					Assert.Equal("b", await trie.GetValue("NoRelocation"));
+					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
+					Assert.Equal("a", await trie.GetValueString("Relocation"));
+					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 
 					var longKey = new string(Enumerable.Range(0, 256).Select(o => 'a').ToArray());
 					var longValue = new string(Enumerable.Range(0, 256).Select(o => 'b').ToArray());
 					await trie.SetKey(longKey, longValue);
-					Assert.Equal(longValue, await trie.GetValue(longKey));
+					Assert.Equal(longValue, await trie.GetValueString(longKey));
 				}
+		}
+
+		[Fact]
+		public async Task CanUseDBEngine()
+		{
+			await using (var engine = await CreateEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				// Open existing table
+				var table = await tx.GetOrCreateTable("Transactions");
+				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
+				await table.Insert("test", "value");
+			}
+			await using (var engine = await CreateEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				// Open existing table
+				var table = await tx.GetOrCreateTable("Transactions");
+				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
+				Assert.Null(await table.GetRow("test"));
+			}
+			await using (var engine = await CreateEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				// Open existing table
+				var table = await tx.GetOrCreateTable("Transactions");
+				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
+				await table.Insert("test", "value");
+				var row = await table.GetRow("test");
+				Assert.NotNull(row);
+				Assert.Equal("value", await row!.ReadValueString());
+				await table.Commit();
+				row = await table.GetRow("test");
+				Assert.NotNull(row);
+				Assert.Equal("value", await row!.ReadValueString());
+				Assert.Equal(7818, (await table.GetTrie()).RecordCount);
+			}
+			await using (var engine = await CreateEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				// Open existing table
+				var table = await tx.GetOrCreateTable("Transactions");
+				Assert.Equal(7818, (await table.GetTrie()).RecordCount);
+				var row = await table.GetRow("test");
+				Assert.NotNull(row);
+				Assert.Equal("value", await row!.ReadValueString());
+			}
+		}
+
+		private async ValueTask<DBTrieEngine> CreateEngine(bool clean = true, [CallerMemberName] string? caller = null)
+		{
+			caller ??= "";
+			Directory.CreateDirectory(caller);
+			if (clean)
+			{
+				foreach (var file in Directory.GetFiles(caller))
+					File.Delete(file);
+				foreach (var file in Directory.GetFiles("Data"))
+				{
+					File.Copy(file, Path.Combine(caller, Path.GetFileName(file)));
+				}
+			}
+			var engine = await DBTrieEngine.OpenFromFolder(caller);
+			engine.ConsistencyCheck = true;
+			return engine;
 		}
 
 		private static async ValueTask<LTrie> ReloadTrie(LTrie trie)
