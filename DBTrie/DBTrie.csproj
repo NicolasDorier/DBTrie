@@ -8,6 +8,7 @@
   <PropertyGroup>
     <Company>Nicolas Dorier</Company>
     <Copyright>Copyright © Nicolas Dorier 2020</Copyright>
+    <Authors>Nicolas Dorier</Authors>
     <Description>A key value store based on radix tree</Description>
     <PackageTags>nosql,radixtree,key-value</PackageTags>
     <PackageProjectUrl>https://github.com/NicolasDorier/DBTrie</PackageProjectUrl>

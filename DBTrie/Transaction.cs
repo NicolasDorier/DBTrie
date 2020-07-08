@@ -13,26 +13,15 @@ namespace DBTrie
 {
 	public class Transaction : IDisposable
 	{
-		Dictionary<string, Table> _Tables = new Dictionary<string, Table>();
+		internal Dictionary<string, Table> _Tables = new Dictionary<string, Table>();
 		TaskCompletionSource<bool> _Completion;
 		internal DBTrieEngine _Engine;
+		public Schema Schema => _Engine.Schema;
 		public Transaction(DBTrieEngine engine)
 		{
 			_Completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+			_Completion.SetResult(true);
 			_Engine = engine;
-		}
-
-		Schema? _Schema;
-		public async ValueTask<Schema> GetSchema()
-		{
-			if (_Schema is Schema s)
-				return s;
-			var schemaFile = await _Engine.Storages.OpenStorage(Schema.StorageName);
-			var trie = await LTrie.OpenOrInitFromStorage(schemaFile);
-			trie.ConsistencyCheck = _Engine.ConsistencyCheck;
-			s = await Schema.OpenFromTrie(trie);
-			_Schema = s;
-			return s;
 		}
 
 		public Table GetOrCreateTable(string tableName)
@@ -86,8 +75,7 @@ namespace DBTrie
 		}
 		internal async ValueTask RealDispose()
 		{
-			if (_Schema is Schema s)
-				await s.Trie.Storage.DisposeAsync();
+			await Schema.Trie.Storage.DisposeAsync();
 			foreach (var table in _Tables.Values)
 				await table.DisposeAsync();
 		}

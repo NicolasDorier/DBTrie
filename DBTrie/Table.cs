@@ -30,14 +30,13 @@ namespace DBTrie
 		{
 			if (cache is CacheStorage)
 				return cache;
-			var schema = await tx.GetSchema();
-			var fileName = await schema.GetFileNameOrCreate(tableName);
+			var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
 			var tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
 			cache = new CacheStorage(tableFs, true, pageSize);
 			return cache;
 		}
 
-		LTrie? trie;
+		internal LTrie? trie;
 
 		internal async ValueTask<LTrie> GetTrie()
 		{

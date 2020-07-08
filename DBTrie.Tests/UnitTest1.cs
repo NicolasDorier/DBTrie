@@ -217,7 +217,7 @@ namespace DBTrie.Tests
 					Assert.Null(await trie.GetValue("@u"));
 					Assert.Equal(4282, trie.RecordCount);
 
-					var schema = await Schema.OpenFromTrie(trie);
+					var schema = await Schema.OpenOrInitFromTrie(trie);
 					Assert.True(await schema.TableExists("IndexProgress"));
 					Assert.False(await schema.TableExists("In"));
 					Assert.False(await schema.TableExists("IndexProgresss"));
@@ -249,11 +249,11 @@ namespace DBTrie.Tests
 					Assert.Equal(4283, trie.RecordCount);
 
 					// Let's make sure this has been persisted as well
-					schema = await Schema.OpenFromTrie(trie);
+					schema = await Schema.OpenOrInitFromTrie(trie);
 					Assert.Equal(10004282UL, schema.LastFileNumber);
 
 					// Can list tables by name?
-					schema = await Schema.OpenFromTrie(trie);
+					schema = await Schema.OpenOrInitFromTrie(trie);
 					var tables = await schema.GetTables("TestTa").ToArrayAsync();
 					var ordered = tables.OrderBy(o => o).ToArray();
 					Assert.True(tables.SequenceEqual(ordered));
@@ -304,7 +304,7 @@ namespace DBTrie.Tests
 
 						// Reloading
 						trie = await ReloadTrie(trie);
-						schema = await Schema.OpenFromTrie(trie);
+						schema = await Schema.OpenOrInitFromTrie(trie);
 						// Make sure our tables are still here
 						foreach (var k in keys)
 							Assert.True(await schema.TableExists(k));
@@ -585,6 +585,7 @@ namespace DBTrie.Tests
 				using var tx = await engine.OpenTransaction();
 				// Open existing table
 				var table = tx.GetOrCreateTable("Transactions");
+				engine.ConsistencyCheck = true;
 				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
 				await table.Insert("test", "value");
 				var row = await table.Get("test");
@@ -625,16 +626,37 @@ namespace DBTrie.Tests
 				var allRows = await table.Enumerate().ToArrayAsync();
 				Assert.Equal(7817, allRows.Length);
 			}
+			await using (var engine = await CreateEmptyEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetOrCreateTable("MyTable");
+				await table.Insert("qweq", "eqr");
+				await table.Commit();
+				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
+			}
+			await using (var engine = await CreateEmptyEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetOrCreateTable("MyTable");
+				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
+			}
+		}
+
+		private async ValueTask<DBTrieEngine> CreateEmptyEngine(bool clean = true, [CallerMemberName] string? caller = null)
+		{
+			caller ??= "";
+			CleanIfNecessary(clean, caller);
+			var engine = await DBTrieEngine.OpenFromFolder(caller);
+			engine.ConsistencyCheck = true;
+			return engine;
 		}
 
 		private async ValueTask<DBTrieEngine> CreateEngine(bool clean = true, [CallerMemberName] string? caller = null)
 		{
 			caller ??= "";
-			Directory.CreateDirectory(caller);
+			CleanIfNecessary(clean, caller);
 			if (clean)
 			{
-				foreach (var file in Directory.GetFiles(caller))
-					File.Delete(file);
 				foreach (var file in Directory.GetFiles("Data"))
 				{
 					File.Copy(file, Path.Combine(caller, Path.GetFileName(file)));
@@ -643,6 +665,16 @@ namespace DBTrie.Tests
 			var engine = await DBTrieEngine.OpenFromFolder(caller);
 			engine.ConsistencyCheck = true;
 			return engine;
+		}
+
+		private static void CleanIfNecessary(bool clean, string? caller)
+		{
+			Directory.CreateDirectory(caller);
+			if (clean)
+			{
+				foreach (var file in Directory.GetFiles(caller))
+					File.Delete(file);
+			}
 		}
 
 		private static async ValueTask<LTrie> ReloadTrie(LTrie trie)

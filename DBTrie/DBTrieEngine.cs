@@ -21,22 +21,43 @@ namespace DBTrie
 			return OpenFromStorages(storages);
 		}
 
-		private static ValueTask<DBTrieEngine> OpenFromStorages(IStorages storages)
+		private static async ValueTask<DBTrieEngine> OpenFromStorages(IStorages storages)
 		{
 			if (storages == null)
 				throw new ArgumentNullException(nameof(storages));
-			return new ValueTask<DBTrieEngine>(new DBTrieEngine(storages));
+			var schemaFile = await storages.OpenStorage(Schema.StorageName);
+			var trie = await LTrie.OpenOrInitFromStorage(schemaFile);
+			var s = await Schema.OpenOrInitFromTrie(trie);
+			return new DBTrieEngine(storages, s);
 		}
 
 		public IStorages Storages { get; }
+		public Schema Schema { get; }
+
 		/// <summary>
 		/// For debug, check consistency of created trie
 		/// </summary>
-		public bool ConsistencyCheck { get; set; }
+		public bool ConsistencyCheck
+		{
+			get
+			{
+				return _ConsistencyCheck;
+			}
+			set
+			{
+				Schema.Trie.ConsistencyCheck = true;
+				foreach (var table in _Transaction._Tables.Values)
+					if (table.trie is LTrie t)
+						t.ConsistencyCheck = value;
+				_ConsistencyCheck = value;
+			}
+		}
+		bool _ConsistencyCheck = false;
 
-		internal DBTrieEngine(IStorages storages)
+		internal DBTrieEngine(IStorages storages, Schema schema)
 		{
 			Storages = storages;
+			Schema = schema;
 			_Transaction = new Transaction(this);
 			_TransactionWaiter.Writer.TryWrite(_Transaction);
 		}

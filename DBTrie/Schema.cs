@@ -25,12 +25,20 @@ namespace DBTrie
 
 		public ulong LastFileNumber { get; internal set; }
 
-		internal static async ValueTask<Schema> OpenFromTrie(LTrie trie)
+		internal static async ValueTask<Schema> OpenOrInitFromTrie(LTrie trie)
 		{
-			var key = await trie.GetValue(LastFileNumberKey);
-			if (key is null)
-				throw new FormatException("Impossible to parse the schema");
-			return new Schema(trie, await key.ReadValueULong());
+			using var key = await trie.GetValue(LastFileNumberKey);
+			ulong number = 10000000UL;
+			if (key is LTrieValue)
+			{
+				number = await key.ReadValueULong();
+			}
+			else
+			{
+				await trie.SetValue(LastFileNumberKey, number);
+				await trie.Storage.Flush();
+			}
+			return new Schema(trie, number);
 		}
 
 		public async ValueTask<bool> TableExists(string tableName)
