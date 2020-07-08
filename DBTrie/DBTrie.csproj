@@ -5,7 +5,31 @@
     <Nullable>enable</Nullable>
     <LangVersion>8.0</LangVersion>
   </PropertyGroup>
-
+  <PropertyGroup>
+    <Company>Nicolas Dorier</Company>
+    <Copyright>Copyright © Nicolas Dorier 2020</Copyright>
+    <Description>A key value store based on radix tree</Description>
+    <PackageTags>nosql,radixtree,key-value</PackageTags>
+    <PackageProjectUrl>https://github.com/NicolasDorier/DBTrie</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/NicolasDorier/DBTrie</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>portable</DebugType>
+    <Optimize>true</Optimize>
+    <DocumentationFile>bin\Release\DBTrie.XML</DocumentationFile>
+    <NoWarn>1591;1573;1572;1584;1570;3021</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup Condition=" '$(Configuration)' == 'Release' ">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Threading.Channels" Version="4.7.1" />
   </ItemGroup>
