@@ -53,12 +53,12 @@ namespace DBTrie
 			return _Tables.TryGetValue(tableName, out table);
 		}
 
-		public void Init()
+		internal void Init()
 		{
 			_Completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		}
 
-		public Task Completion => _Completion.Task;
+		internal Task Completion => _Completion.Task;
 
 		public async ValueTask Commit()
 		{

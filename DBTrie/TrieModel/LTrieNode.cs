@@ -131,7 +131,7 @@ namespace DBTrie.TrieModel
 			{
 				if (l.LinkToNode)
 					throw new InvalidOperationException("Another link already exists");
-				var record = await Trie.ReadValue(l.Pointer);
+				using var record = await Trie.ReadValue(l.Pointer);
 				var internalLink = record.Key.Length == MinKeyLength + 1;
 				var newNodePointer = await WriteNewNode(internalLink ? 1 : 2);
 				if (internalLink)

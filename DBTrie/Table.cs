@@ -3,7 +3,9 @@ using DBTrie.TrieModel;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DBTrie
@@ -70,6 +72,64 @@ namespace DBTrie
 			if (key == null)
 				throw new ArgumentNullException(nameof(key));
 			return await (await GetTrie()).GetValue(key);
+		}
+		public async ValueTask<IRow?> GetRow(ReadOnlyMemory<byte> key)
+		{
+			return await (await GetTrie()).GetValue(key);
+		}
+
+		public IAsyncEnumerable<IRow> Enumerate(string? startsWith = null)
+		{
+			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith ?? string.Empty));
+		}
+		public IAsyncEnumerable<IRow> Enumerate(ReadOnlyMemory<byte> startsWith)
+		{
+			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith));
+		}
+
+		class DeferredAsyncEnumerable : IAsyncEnumerable<IRow>, IAsyncEnumerator<IRow>
+		{
+			ValueTask<LTrie> trieTask;
+			private readonly Func<LTrie, IAsyncEnumerable<IRow>> enumerate;
+			IAsyncEnumerator<IRow>? internalEnumerator;
+			IAsyncEnumerator<IRow> InternalEnumerator
+			{
+				get
+				{
+					if (internalEnumerator is null)
+						throw new InvalidOperationException("MoveNext is not called");
+					return internalEnumerator;
+				}
+			}
+			public DeferredAsyncEnumerable(ValueTask<LTrie> trie, Func<LTrie, IAsyncEnumerable<IRow>> enumerate)
+			{
+				this.trieTask = trie;
+				this.enumerate = enumerate;
+			}
+
+			public IRow Current => InternalEnumerator.Current;
+
+			public ValueTask DisposeAsync()
+			{
+				return default;
+			}
+
+			public IAsyncEnumerator<IRow> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+			{
+				if (!(internalEnumerator is null))
+					throw new InvalidOperationException("Impossible to enumerate this enumerable twice");
+				return this;
+			}
+
+			public async ValueTask<bool> MoveNextAsync()
+			{
+				if (internalEnumerator is null)
+				{
+					var trie = await trieTask;
+					internalEnumerator = enumerate(trie).GetAsyncEnumerator();
+				}
+				return await internalEnumerator.MoveNextAsync();
+			}
 		}
 	}
 }

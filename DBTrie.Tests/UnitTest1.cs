@@ -208,13 +208,13 @@ namespace DBTrie.Tests
 					await using var fs = CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
 					var trie = await CreateTrie(fs, allowTrieCache);
 					var generationNode = await trie.ReadNode();
-					var result = await trie.GetKey("@@@@LastFileNumber");
+					var result = await trie.GetValue("@@@@LastFileNumber");
 					Assert.NotNull(result);
 					Assert.Equal(64, result!.Pointer);
 					Assert.Equal(89, result.ValuePointer);
 					Assert.Equal(8, result.ValueLength);
-					Assert.Null(await trie.GetKey("notexists"));
-					Assert.Null(await trie.GetKey("@u"));
+					Assert.Null(await trie.GetValue("notexists"));
+					Assert.Null(await trie.GetValue("@u"));
 					Assert.Equal(4282, trie.RecordCount);
 
 					var schema = await Schema.OpenFromTrie(trie);
@@ -323,25 +323,25 @@ namespace DBTrie.Tests
 				{
 					logs.WriteLine($"allowTrieCache: {allowTrieCache}");
 					logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
-					await using var fs = CreateFileStorage("10004281", cacheStorageLayer);
+					await using var fs = CreateFileStorage("10000007", cacheStorageLayer);
 					LTrie trie = await CreateTrie(fs, allowTrieCache);
 					trie.ConsistencyCheck = false;
 					DateTimeOffset now = DateTimeOffset.UtcNow;
 					int records = 0;
-					await foreach (var row in trie.EnumerateStartWith(""))
+					await foreach (var row in trie.EnumerateStartsWith(""))
 					{
 						records++;
 					}
 					logs.WriteLine($"Record count : {records}");
 					logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartWith(""))
+					await foreach (var row in trie.EnumerateStartsWith(""))
 					{
 
 					}
 					logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartWith(""))
+					await foreach (var row in trie.EnumerateStartsWith(""))
 					{
 						using var owner = trie.MemoryPool.Rent(row.ValueLength);
 						await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
@@ -359,7 +359,7 @@ namespace DBTrie.Tests
 					await using var fs = CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
 					LTrie trie = await CreateTrie(fs, allowTrieCache);
 					var countBefore = trie.RecordCount;
-					Assert.Null(await trie.GetKey("CanSetKeyValue"));
+					Assert.Null(await trie.GetValue("CanSetKeyValue"));
 					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r1");
 					Assert.Equal("CanSetKeyValue-r1", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 1, trie.RecordCount);
@@ -370,12 +370,12 @@ namespace DBTrie.Tests
 					Assert.Equal(countBefore + 1, trie.RecordCount);
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 
-					Assert.Null(await trie.GetKey("Relocation"));
+					Assert.Null(await trie.GetValue("Relocation"));
 					await trie.SetKey("Relocation", "a");
 					Assert.Equal("a", await trie.GetValueString("Relocation"));
 					Assert.Equal(countBefore + 2, trie.RecordCount);
 
-					Assert.Null(await trie.GetKey("NoRelocation"));
+					Assert.Null(await trie.GetValue("NoRelocation"));
 					await trie.SetKey("NoRelocation", "b");
 					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 					Assert.Equal(countBefore + 3, trie.RecordCount);
@@ -386,14 +386,14 @@ namespace DBTrie.Tests
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 3, trie.RecordCount);
 
-					Assert.Null(await trie.GetKey("k"));
+					Assert.Null(await trie.GetValue("k"));
 					await trie.SetKey("k", "k-r1");
 					Assert.Equal("k-r1", await trie.GetValueString("k"));
 					await trie.SetKey("k", "k-r2");
 					Assert.Equal("k-r2", await trie.GetValueString("k"));
 					Assert.Equal(countBefore + 4, trie.RecordCount);
 
-					Assert.Null(await trie.GetKey("CanSetKeyValue-Extended"));
+					Assert.Null(await trie.GetValue("CanSetKeyValue-Extended"));
 					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r1");
 					Assert.Equal("CanSetKeyValue-Extended-r1", await trie.GetValueString("CanSetKeyValue-Extended"));
 					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r2");
@@ -590,7 +590,7 @@ namespace DBTrie.Tests
 				var row = await table.GetRow("test");
 				Assert.NotNull(row);
 				Assert.Equal("value", await row!.ReadValueString());
-				await table.Commit();
+				await tx.Commit();
 				row = await table.GetRow("test");
 				Assert.NotNull(row);
 				Assert.Equal("value", await row!.ReadValueString());
@@ -605,6 +605,25 @@ namespace DBTrie.Tests
 				var row = await table.GetRow("test");
 				Assert.NotNull(row);
 				Assert.Equal("value", await row!.ReadValueString());
+			}
+
+			await using (var engine = await CreateEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = await tx.GetOrCreateTable("Transactions");
+				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
+				await table.Insert("test", "value");
+				var row = await table.GetRow("test");
+				Assert.NotNull(row);
+				Assert.Equal("value", await row!.ReadValueString());
+				Assert.Equal(7818, (await table.GetTrie()).RecordCount);
+				tx.Rollback();
+				row = await table.GetRow("test");
+				Assert.Null(row);
+				Assert.Equal(7817, (await table.GetTrie()).RecordCount);
+
+				var allRows = await table.Enumerate().ToArrayAsync();
+				Assert.Equal(7817, allRows.Length);
 			}
 		}
 

@@ -209,7 +209,7 @@ namespace DBTrie.TrieModel
 			return node;
 		}
 
-		public async ValueTask<LTrieValue?> GetKey(string key)
+		public async ValueTask<LTrieValue?> GetValue(string key)
 		{
 			using var owner = GetNameAsBytes(key);
 			return await GetValue(owner.Memory);
@@ -261,7 +261,7 @@ namespace DBTrie.TrieModel
 				}
 				else
 				{
-					var record = await ReadValue(res.ValueLink.Pointer);
+					using var record = await ReadValue(res.ValueLink.Pointer);
 					// We are replacing a child with the same key
 					if (record.Key.Span.SequenceEqual(key.Span))
 					{
@@ -308,18 +308,18 @@ namespace DBTrie.TrieModel
 			return increaseRecord;
 		}
 
-		internal async IAsyncEnumerable<LTrieValue> EnumerateStartWith(string startWithKey)
+		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(string startsWith)
 		{
-			var c = Encoding.UTF8.GetByteCount(startWithKey, 0, startWithKey.Length);
+			var c = Encoding.UTF8.GetByteCount(startsWith, 0, startsWith.Length);
 			using var owner = MemoryPool.Rent(c);
-			Encoding.UTF8.GetBytes(startWithKey, owner.Memory.Span.Slice(0, c));
-			await foreach (var item in EnumerateStartWith(owner.Memory.Slice(0, c)))
+			Encoding.UTF8.GetBytes(startsWith, owner.Memory.Span.Slice(0, c));
+			await foreach (var item in EnumerateStartsWith(owner.Memory.Slice(0, c)))
 			{
 				yield return item;
 			}
 		}
 
-		internal async IAsyncEnumerable<LTrieValue> EnumerateStartWith(ReadOnlyMemory<byte> startWithKey)
+		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
 		{
 			var res = await FindBestMatch(startWithKey);
 
@@ -328,7 +328,7 @@ namespace DBTrie.TrieModel
 				yield break;
 			if (res.ValueLink is Link)
 			{
-				var record = await ReadValue(res.ValueLink.Pointer);
+				using var record = await ReadValue(res.ValueLink.Pointer);
 				if (record.Key.Span.StartsWith(startWithKey.Span))
 					yield return record;
 			}
@@ -341,7 +341,7 @@ namespace DBTrie.TrieModel
 					var link = externalLinks.Current;
 					if (!link.LinkToNode)
 					{
-						var record = await ReadValue(link.Pointer);
+						using var record = await ReadValue(link.Pointer);
 						if (record.Key.Span.StartsWith(startWithKey.Span))
 							yield return record;
 					}
@@ -350,7 +350,7 @@ namespace DBTrie.TrieModel
 						var childNode = await ReadNode(link.Pointer, res.BestNode.MinKeyLength + nextNodes.Count + 1);
 						if (childNode.InternalLink is Link ll)
 						{
-							var record = await ReadValue(ll.Pointer);
+							using var record = await ReadValue(ll.Pointer);
 							if (record.Key.Span.StartsWith(startWithKey.Span))
 								yield return record;
 						}
@@ -360,13 +360,6 @@ namespace DBTrie.TrieModel
 					}
 				}
 			}
-		}
-		public async ValueTask<LTrieValue?> GetValue(string key)
-		{
-			var c = Encoding.UTF8.GetByteCount(key, 0, key.Length);
-			using var owner = MemoryPool.Rent(c);
-			Encoding.UTF8.GetBytes(key, owner.Memory.Span.Slice(0, c));
-			return await GetValue(owner.Memory.Slice(0, c));
 		}
 		public async ValueTask<LTrieValue?> GetValue(ReadOnlyMemory<byte> key)
 		{
@@ -392,7 +385,7 @@ namespace DBTrie.TrieModel
 			bool removedNode = false;
 			if (res.ValueLink.Label is byte label)
 			{
-				var value = await ReadValue(res.ValueLink.Pointer);
+				using var value = await ReadValue(res.ValueLink.Pointer);
 				if (value.Key.Span.SequenceCompareTo(key.Span) == 0)
 				{
 					removedValue = await res.BestNode.RemoveExternalLink(label);

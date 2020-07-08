@@ -77,7 +77,7 @@ namespace DBTrie
 		public async IAsyncEnumerable<string> GetTables(string? startWith = null)
 		{
 			using var key = this.GetTableNameBytes(startWith);
-			await foreach (var value in Trie.EnumerateStartWith(key.Memory))
+			await foreach (var value in Trie.EnumerateStartsWith(key.Memory))
 			{
 				yield return Encoding.UTF8.GetString(value.Key.Span.Slice(3));
 			}
