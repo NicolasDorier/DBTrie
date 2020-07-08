@@ -49,7 +49,7 @@ namespace DBTrie
 				var bytes = new byte[10];
 				bytes[1] = 1;
 				bytes.AsSpan().Slice(2).ToBigEndian(fileNumber);
-				await Trie.SetKey(owner.Memory, bytes);
+				await Trie.SetValue(owner.Memory, bytes);
 				var row = await Trie.GetValue(LastFileNumberKey);
 				if (row is null)
 					throw new InvalidOperationException("LastFileNumberKey is not found");

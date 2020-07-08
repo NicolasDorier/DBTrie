@@ -47,20 +47,20 @@ namespace DBTrie.TrieModel
 			using var owner = MemoryPool.Rent(keyCount + valueCount);
 			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
 			Encoding.UTF8.GetBytes(value, owner.Memory.Span.Slice(keyCount));
-			return await SetKey(owner.Memory.Slice(0, keyCount), owner.Memory.Slice(keyCount, valueCount));
+			return await SetValue(owner.Memory.Slice(0, keyCount), owner.Memory.Slice(keyCount, valueCount));
 		}
 		public async ValueTask<bool> SetValue(string key, ReadOnlyMemory<byte> value)
 		{
 			var keyCount = Encoding.UTF8.GetByteCount(key);
 			using var owner = MemoryPool.Rent(keyCount);
 			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
-			return await SetKey(owner.Memory.Slice(0, keyCount), value);
+			return await SetValue(owner.Memory.Slice(0, keyCount), value);
 		}
 		internal async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ulong value)
 		{
 			using var owner = MemoryPool.Rent(8);
 			owner.Memory.Span.ToBigEndian(value);
-			return await SetKey(key, owner.Memory.Slice(0, 8));
+			return await SetValue(key, owner.Memory.Slice(0, 8));
 		}
 
 		public static LTrie OpenFromSpan(IStorage storage, ReadOnlySpan<byte> span, MemoryPool<byte>? memoryPool = null)
@@ -223,7 +223,7 @@ namespace DBTrie.TrieModel
 			return await val.ReadValueString();
 		}
 
-		public async ValueTask<bool> SetKey(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		public async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			var res = await FindBestMatch(key);
 			bool increaseRecord = false;

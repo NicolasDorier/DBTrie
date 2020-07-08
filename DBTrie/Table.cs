@@ -40,6 +40,18 @@ namespace DBTrie
 			if (this.cache.Clear())
 				trie = null;
 		}
+
+		public async ValueTask<bool> Delete(ReadOnlyMemory<byte> key)
+		{
+			return await (await this.GetTrie()).DeleteRow(key);
+		}
+		public async ValueTask<bool> Delete(string key)
+		{
+			if (key == null)
+				throw new ArgumentNullException(nameof(key));
+			return await (await this.GetTrie()).DeleteRow(key);
+		}
+
 		internal async ValueTask DisposeAsync()
 		{
 			this.cache.Clear();
@@ -51,7 +63,6 @@ namespace DBTrie
 		{
 			return this.cache.Reserve();
 		}
-
 		public async ValueTask<bool> Insert(string key, string value)
 		{
 			if (key == null)
@@ -66,14 +77,18 @@ namespace DBTrie
 				throw new ArgumentNullException(nameof(key));
 			return await (await GetTrie()).SetValue(key, value);
 		}
+		public async ValueTask<bool> Insert(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		{
+			return await (await GetTrie()).SetValue(key, value);
+		}
 
-		public async ValueTask<IRow?> GetRow(string key)
+		public async ValueTask<IRow?> Get(string key)
 		{
 			if (key == null)
 				throw new ArgumentNullException(nameof(key));
 			return await (await GetTrie()).GetValue(key);
 		}
-		public async ValueTask<IRow?> GetRow(ReadOnlyMemory<byte> key)
+		public async ValueTask<IRow?> Get(ReadOnlyMemory<byte> key)
 		{
 			return await (await GetTrie()).GetValue(key);
 		}
