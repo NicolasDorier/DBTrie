@@ -146,6 +146,7 @@ namespace DBTrie.Storage
 								if (toRemove is null)
 									toRemove = new List<long>();
 								toRemove.Add(page.Key);
+								page.Value.Dispose();
 							}
 						}
 						if (pages.TryGetValue(_LastPage, out var lastPage))
@@ -201,6 +202,7 @@ namespace DBTrie.Storage
 			foreach (var page in pages.Where(p => p.Value.Dirty))
 			{
 				toRemove.Add(page.Key);
+				page.Value.Dispose();
 			}
 			foreach (var page in toRemove)
 			{
