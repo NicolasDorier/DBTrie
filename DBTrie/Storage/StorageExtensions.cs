@@ -13,15 +13,5 @@ namespace DBTrie.Storage
 			await storage.Write(storage.Length, input);
 			return oldPointer;
 		}
-		public static async ValueTask Reserve(this IStorage storage, int additionalLength)
-		{
-			var location = storage.Length + additionalLength - 1;
-			if (location >= storage.Length)
-			{
-				var oldPointer = storage.Length;
-				var nothing = new byte[1];
-				await storage.Write(location, nothing);
-			}
-		}
 	}
 }

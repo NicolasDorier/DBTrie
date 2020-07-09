@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Data.SqlTypes;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -130,6 +132,96 @@ namespace DBTrie.TrieModel
 			};
 		}
 
+		public async ValueTask<int> Defragment()
+		{
+			NodeCache?.Clear();
+			var usedMemories = new List<UsedMemory>();
+			usedMemories.Add(new UsedMemory() { Pointer = 0, Size = Sizes.RootSize, PointingTo = new List<UsedMemory>() });
+			var nodesToVisit = new Stack<(long NodePointer, long PointedFrom, UsedMemory ParentNode)>();
+			nodesToVisit.Push((RootPointer, 2, usedMemories[0]));
+			while(nodesToVisit.Count > 0)
+			{
+				var current = nodesToVisit.Pop();
+				var node = await ReadNode(current.NodePointer, -1, false);
+				var nodeMemory = new UsedMemory()
+				{
+					Pointer = node.OwnPointer,
+					Size = node.Size,
+					PointedBy = current.PointedFrom,
+					PointingTo = new List<UsedMemory>(node.ExternalLinks.Count + (node.InternalLink is null ? 0 : 1))
+				};
+				current.ParentNode.PointingTo!.Add(nodeMemory);
+				usedMemories.Add(nodeMemory);
+				if (node.InternalLink is Link internalLink)
+				{
+					var v = await ReadValue(internalLink.Pointer);
+					var valueMem = new UsedMemory()
+					{
+						Pointer = v.Pointer,
+						Size = v.Size,
+						PointedBy = internalLink.OwnPointer
+					};
+					nodeMemory.PointingTo.Add(valueMem);
+					usedMemories.Add(valueMem);
+				}
+				foreach (var externalLink in node.ExternalLinks)
+				{
+					if (externalLink.LinkToNode)
+					{
+						nodesToVisit.Push((externalLink.Pointer, externalLink.OwnPointer + 2, nodeMemory));
+					}
+					else
+					{
+						var v = await ReadValue(externalLink.Pointer);
+						var valueMem = new UsedMemory()
+						{
+							Pointer = v.Pointer,
+							Size = v.Size,
+							PointedBy = externalLink.OwnPointer + 2
+						};
+						nodeMemory.PointingTo.Add(valueMem);
+						usedMemories.Add(valueMem);
+					}
+				}
+			}
+
+			int totalSaved = 0;
+			int nextOffset = Sizes.RootSize;
+			// We have a list of all memory region in use (skipping root)
+			var owner = MemoryPool.Rent(256);
+			foreach (var region in usedMemories.OrderBy(u => u.Pointer).Skip(1))
+			{
+				var gap = (int)(region.Pointer - nextOffset);
+				if (gap > 0)
+				{
+					if (owner.Memory.Span.Length < region.Size)
+					{
+						owner.Dispose();
+						owner = MemoryPool.Rent(region.Size);
+					}
+					var mem = owner.Memory.Slice(0, region.Size);
+					await Storage.Read(region.Pointer, mem);
+					await Storage.Write(nextOffset, mem);
+					await StorageHelper.WritePointer(region.PointedBy, nextOffset);
+					region.Pointer -= gap;
+					if (region.PointingTo is List<UsedMemory> pointingTo)
+					{
+						foreach (var childmem in pointingTo)
+						{
+							childmem.PointedBy -= gap;
+						}
+					}
+					totalSaved = gap - totalSaved;
+				}
+				else if (gap != 0)
+					throw new InvalidOperationException("Bug in DBTrie during garbage collection");
+				nextOffset += region.Size;
+			}
+			owner.Dispose();
+			await Storage.Resize(Storage.Length - totalSaved);
+			return totalSaved;
+		}
+
 		internal async ValueTask<bool> TryOverwriteValue(Link link, ReadOnlyMemory<byte> value)
 		{
 			if (link.LinkToNode)
@@ -137,7 +229,7 @@ namespace DBTrie.TrieModel
 			using var record = await ReadValue(link.Pointer);
 			if (record.ValueMaxLength >= value.Length)
 			{
-				using var owner = this.MemoryPool.Rent(LTrieValue.GetSize(record.Key, value));
+				using var owner = this.MemoryPool.Rent(LTrieValue.GetSize(record.Key.Length, value.Length, record.ValueMaxLength));
 				var len = record.WriteToSpan(owner.Memory.Span, value.Span);
 				await Storage.Write(link.Pointer, owner.Memory.Slice(0, len));
 				return true;

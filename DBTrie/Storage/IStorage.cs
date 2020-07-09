@@ -10,6 +10,7 @@ namespace DBTrie.Storage
 		ValueTask Read(long offset, Memory<byte> output);
 		ValueTask Write(long offset, ReadOnlyMemory<byte> input);
 		ValueTask Flush();
-		public long Length { get; }
+		long Length { get; }
+		ValueTask Resize(long newLength);
 	}
 }

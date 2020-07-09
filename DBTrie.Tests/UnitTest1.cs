@@ -177,13 +177,66 @@ namespace DBTrie.Tests
 			Assert.Equal("abCDEFgh", await fs.Read(125, "abCDEFgh".Length));
 
 			Assert.Equal(cache.Length, fs.Length);
-			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length, fs.Length);
-			await fs.Reserve(10);
-			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 10, fs.Length);
-			await fs.Reserve(1);
-			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 11, fs.Length);
-			await fs.Reserve(0);
-			Assert.Equal(1030 + "helloworldabdwuqiwiw".Length + 11, fs.Length);
+			var l = (1030 + "helloworldabdwuqiwiw".Length);
+			Assert.Equal(l, fs.Length);
+			await fs.Resize(l + 10);
+			Assert.Equal(l + 10, fs.Length);
+			await fs.Resize(l + 10 + 1);
+			Assert.Equal(l + 10 + 1, fs.Length);
+			await fs.Resize(l + 10 + 1 + 0);
+			Assert.Equal(l + 10 + 1 + 0, fs.Length);
+		}
+
+		[Fact]
+		public async Task TestResize()
+		{
+			CreateEmptyFile("EmptyResizable", 0);
+			await using var fs = new FileStorage("EmptyResizable");
+			await TestResizeCore(0, fs);
+
+			CreateEmptyFile("EmptyResizable2", 0);
+			await using var fs2 = new FileStorage("EmptyResizable2");
+			await using var cache = new CacheStorage(fs2, false);
+			await TestResizeCore(0, cache);
+			await TestResizeCore(cache.PageSize, cache);
+			await TestResizeCore(cache.PageSize - 1, cache);
+			await TestResizeCore(cache.PageSize - 3, cache);
+			await TestResizeCore(cache.PageSize + 4, cache);
+			Assert.Equal(2, cache.MappedPageCount);
+			await cache.Resize(cache.PageSize);
+			Assert.Equal(1, cache.MappedPageCount);
+			Assert.Equal(cache.PageSize, cache.Length);
+			var cacheLengthBefore = cache.Length;
+			var fsLengthBefore = fs2.Length;
+			await cache.WriteToEnd("ab");
+			Assert.Equal(2, cache.MappedPageCount);
+			Assert.Equal(fsLengthBefore, fs2.Length);
+			Assert.Equal(cacheLengthBefore + 2, cache.Length);
+			await cache.Flush();
+			Assert.Equal("ab", await fs2.Read(cacheLengthBefore, 2));
+			Assert.Equal(fs2.Length, cache.Length);
+			Assert.Equal(cacheLengthBefore + 2, cache.Length);
+			await cache.Resize(0);
+			Assert.Equal(0, cache.Length);
+			Assert.Equal(cacheLengthBefore + 2, fs2.Length);
+			await cache.Flush();
+			Assert.Equal(0, fs2.Length);
+
+			await cache.Resize(cache.PageSize - 1);
+			await cache.WriteToEnd("ABCDE");
+			await cache.Flush();
+			Assert.Equal("ABCDE", await fs2.Read(cache.PageSize - 1, 5));
+		}
+
+		private async Task TestResizeCore(int offset, IStorage store)
+		{
+			await store.Write(offset, "hello");
+			await store.Resize(offset + "hello".Length - 1);
+			Assert.Equal("hell\0", await store.Read(offset, "hello".Length));
+			Assert.Equal(offset + "hell".Length, store.Length);
+			await store.Resize(offset + 13);
+			Assert.Equal(offset + 13, store.Length);
+			Assert.Equal("hell\0", await store.Read(offset, "hello".Length));
 		}
 
 		private static void CreateEmptyFile(string name, int size)
@@ -313,6 +366,38 @@ namespace DBTrie.Tests
 						Assert.Equal(recordCountBefore + keys.Length, trie.RecordCount);
 					}
 				}
+		}
+
+		[Fact]
+		public async Task CanDefragment()
+		{
+			int countBefore = 0;
+			await using (var engine = await CreateEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				countBefore = (await table.Enumerate().ToArrayAsync()).Length;
+				var trie = await table.GetTrie();
+				var cacheLengthBefore = ((CacheStorage)trie.Storage).Length;
+				var fsLengthBefore = ((CacheStorage)trie.Storage).InnerStorage.Length;
+				var saving = await table.Defragment();
+				Assert.NotEqual(0, saving);
+				Assert.Equal(0, await table.Defragment());
+				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+				Assert.Equal(fsLengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				Assert.Equal(cacheLengthBefore, ((CacheStorage)trie.Storage).Length + saving);
+				await tx.Commit();
+				Assert.Equal(fsLengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length + saving);
+				Assert.Equal(cacheLengthBefore, ((CacheStorage)trie.Storage).Length + saving);
+				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+			}
+			await using (var engine = await CreateEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				Assert.Equal(0, await table.Defragment());
+				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+			}
 		}
 
 		[Fact]

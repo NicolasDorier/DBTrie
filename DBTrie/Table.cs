@@ -84,7 +84,7 @@ namespace DBTrie
 
 		internal async ValueTask Reserve()
 		{
-			 await (await this.GetCacheStorage()).Reserve();
+			 await (await this.GetCacheStorage()).ResizeInner();
 		}
 		public async ValueTask<bool> Insert(string key, string value)
 		{
@@ -149,6 +149,16 @@ namespace DBTrie
 			if (await tx.Schema.GetFileName(tableName) is ulong fileName)
 				return await tx.Storages.Exists(fileName.ToString());
 			return false;
+		}
+
+		/// <summary>
+		/// Reclaim unused space
+		/// </summary>
+		/// <returns>The number of bytes saved</returns>
+		public async ValueTask<int> Defragment()
+		{
+			var trie = await GetTrie();
+			return await trie.Defragment();
 		}
 
 		class DeferredAsyncEnumerable : IAsyncEnumerable<IRow>, IAsyncEnumerator<IRow>

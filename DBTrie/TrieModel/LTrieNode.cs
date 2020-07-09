@@ -31,8 +31,13 @@ namespace DBTrie.TrieModel
 					OwnPointer = OwnPointer + 2
 				};
 			}
-
-			memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
+			try
+			{
+				memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
+			}
+			catch 
+			{ 
+			}
 			externalLinks = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
 			for (int j = 0; j < memory.Length; j += Sizes.ExternalLinkLength)
 			{
@@ -112,7 +117,8 @@ namespace DBTrie.TrieModel
 
 		public Link? InternalLink { get; private set; }
 		public long OwnPointer { get; internal set; }
-		
+		public int Size => LineLength + 2;
+
 		internal async ValueTask SetInternalValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
 			if (InternalLink is Link l && await Trie.TryOverwriteValue(l, value))
@@ -327,7 +333,7 @@ namespace DBTrie.TrieModel
 
 		internal async ValueTask<long> WriteNewValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
-			using var owner = Trie.MemoryPool.Rent(LTrieValue.GetSize(key, value));
+			using var owner = Trie.MemoryPool.Rent(LTrieValue.GetSize(key.Length, value.Length, value.Length));
 			var len = LTrieValue.WriteToSpan(owner.Memory.Span, key.Span, value.Span);
 			var memory = owner.Memory.Slice(0, len);
 			return await Trie.Storage.WriteToEnd(memory);

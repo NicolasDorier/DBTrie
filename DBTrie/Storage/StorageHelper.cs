@@ -47,5 +47,19 @@ namespace DBTrie.Storage
 			await Storage.Read(pointer, mem);
 			return mem.ToReadOnly().Span.ReadUInt64BigEndian();
 		}
+		internal async ValueTask<ulong> ReadUShort(long pointer)
+		{
+			using var owner2 = MemoryPool.Rent(2);
+			var mem = owner2.Memory.Slice(0, 2);
+			await Storage.Read(pointer, mem);
+			return mem.ToReadOnly().Span.ReadUInt16BigEndian();
+		}
+		internal async ValueTask<long> ReadPointer(long pointer)
+		{
+			using var owner2 = MemoryPool.Rent(Sizes.DefaultPointerLen);
+			var mem = owner2.Memory.Slice(0, Sizes.DefaultPointerLen);
+			await Storage.Read(pointer, mem);
+			return (long)mem.ToReadOnly().Span.BigEndianToLongDynamic();
+		}
 	}
 }

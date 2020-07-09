@@ -45,5 +45,20 @@ namespace DBTrie.Storage
 		{
 			await _fsData.FlushAsync();
 		}
+
+		public async ValueTask Resize(long newSize)
+		{
+			if (newSize > _fsData.Length)
+			{
+				var nothing = new byte[1];
+				_fsData.Seek(newSize - 1, SeekOrigin.Begin);
+				await _fsData.WriteAsync(nothing);
+			}
+			else if (newSize < _fsData.Length)
+			{
+				await _fsData.FlushAsync();
+				_fsData.SetLength(newSize);
+			}
+		}
 	}
 }

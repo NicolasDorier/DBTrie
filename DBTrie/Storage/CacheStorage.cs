@@ -39,7 +39,7 @@ namespace DBTrie.Storage
 		{
 			InnerStorage = inner;
 			PageSize = pageSize;
-			_Length = inner.Length;
+			Length = inner.Length;
 			own = ownInner;
 		}
 		public int PageSize { get; }
@@ -47,6 +47,11 @@ namespace DBTrie.Storage
 		public async ValueTask Read(long offset, Memory<byte> output)
 		{
 			var p = Math.DivRem(offset, PageSize, out var pageOffset);
+			if (p > _LastPage)
+			{
+				output.Span.Fill(0);
+				return;
+			}
 			while (!output.IsEmpty)
 			{
 				if (!pages.TryGetValue(p, out var page))
@@ -54,7 +59,17 @@ namespace DBTrie.Storage
 					page = await FetchPage(p);
 				}
 				var chunkLength = Math.Min(output.Length, PageSize - pageOffset);
-				page.Content.Span.Slice((int)pageOffset, (int)chunkLength).CopyTo(output.Span);
+				if (_LastPage == p)
+				{
+					chunkLength = Math.Min(chunkLength, _LastPageLength);
+					page.Content.Span.Slice((int)pageOffset, (int)chunkLength).CopyTo(output.Span);
+					output.Span.Slice((int)chunkLength).Fill(0);
+					return;
+				}
+				else
+				{
+					page.Content.Span.Slice((int)pageOffset, (int)chunkLength).CopyTo(output.Span);
+				}
 				output = output.Slice((int)chunkLength);
 				pageOffset = 0;
 				p++;
@@ -84,7 +99,7 @@ namespace DBTrie.Storage
 				pageOffset = 0;
 				p++;
 			}
-			_Length = Math.Max(_Length, lastByte);
+			Length = Math.Max(Length, lastByte);
 		}
 
 		private ReadOnlyMemory<byte> WriteOnPage(CachePage page, long pageOffset, ReadOnlyMemory<byte> input)
@@ -98,11 +113,66 @@ namespace DBTrie.Storage
 		}
 
 		long _Length;
-		public long Length => _Length;
+		private long _LastPage;
+		private long _LastPageLength;
+
+		public long Length
+		{
+			get
+			{
+				return _Length;
+			}
+			internal set
+			{
+				if (value < 0)
+					throw new ArgumentOutOfRangeException();
+				if (_Length != value)
+				{
+					var oldSize = _Length;
+					_Length = value;
+					_LastPage = Math.DivRem((int)value, PageSize, out _LastPageLength);
+					if (_LastPageLength == 0)
+					{
+						_LastPage--;
+						_LastPageLength = PageSize;
+					}
+					if (oldSize > _Length)
+					{
+						List<long>? toRemove = null;
+						foreach (var page in pages)
+						{
+							if (page.Value.PageNumber > _LastPage)
+							{
+								if (toRemove is null)
+									toRemove = new List<long>();
+								toRemove.Add(page.Key);
+							}
+						}
+						if (pages.TryGetValue(_LastPage, out var lastPage))
+						{
+							var oldWrittenLength = lastPage.WrittenLength;
+							lastPage.WrittenLength = (int)Math.Min(lastPage.WrittenLength, _LastPageLength);
+							lastPage.Content.Span.Slice(lastPage.WrittenLength, oldWrittenLength - lastPage.WrittenLength).Fill(0);
+						}
+						if (toRemove != null)
+						{
+							foreach (var page in toRemove)
+							{
+								pages.Remove(page);
+							}
+						}
+					}
+					
+					
+				}
+			}
+		}
+
+		public int MappedPageCount => pages.Count;
 
 		public async ValueTask Flush()
 		{
-			await InnerStorage.Reserve((int)(Length - InnerStorage.Length));
+			await InnerStorage.Resize(Length);
 			foreach(var page in pages.Where(p => p.Value.Dirty))
 			{
 				await InnerStorage.Write(page.Key * PageSize, page.Value.Content.Slice(page.Value.WrittenStart, page.Value.WrittenLength));
@@ -116,9 +186,9 @@ namespace DBTrie.Storage
 		/// Make sure the underlying file can grow to write the data to commit
 		/// </summary>
 		/// <returns></returns>
-		public async ValueTask Reserve()
+		public async ValueTask ResizeInner()
 		{
-			await InnerStorage.Reserve((int)(Length - InnerStorage.Length));
+			await InnerStorage.Resize(Length);
 		}
 
 		/// <summary>
@@ -127,13 +197,16 @@ namespace DBTrie.Storage
 		/// <returns>true if at least a single page got removed</returns>
 		public bool Clear()
 		{
-			bool removed = false;
-			foreach (var page in pages.Where(p => p.Value.Dirty).ToList())
+			List<long> toRemove = new List<long>();
+			foreach (var page in pages.Where(p => p.Value.Dirty))
 			{
-				pages.Remove(page.Key);
-				removed = true;
+				toRemove.Add(page.Key);
 			}
-			return removed;
+			foreach (var page in toRemove)
+			{
+				pages.Remove(page);
+			}
+			return toRemove.Count > 0;
 		}
 
 		public async ValueTask DisposeAsync()
@@ -144,6 +217,12 @@ namespace DBTrie.Storage
 			foreach (var page in pages)
 				page.Value.Dispose();
 			pages.Clear();
+		}
+
+		public ValueTask Resize(long newLength)
+		{
+			Length = newLength;
+			return default;
 		}
 	}
 }

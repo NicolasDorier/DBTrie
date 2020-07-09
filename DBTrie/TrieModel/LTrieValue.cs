@@ -29,7 +29,6 @@ namespace DBTrie.TrieModel
 		public long ValuePointer;
 		public int ValueMaxLength;
 		internal long Pointer;
-
 		public async ValueTask<ReadOnlyMemory<byte>> ReadValue()
 		{
 			if (value is IMemoryOwner<byte> v)
@@ -90,9 +89,10 @@ namespace DBTrie.TrieModel
 			return i;
 		}
 
-		public static int GetSize(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		public int Size => (Protocol == 0 ? 7 : 11) + KeyLength + ValueLength;
+		public static int GetSize(int keySize, int valueSize, int valueMaxSize)
 		{
-			return 11 + key.Length + value.Length;
+			return ((valueSize == valueMaxSize) ? 7 : 11) + keySize + valueSize;
 		}
 
 		public void Dispose()
