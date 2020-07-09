@@ -18,6 +18,8 @@ namespace DBTrie
 		bool checkConsistency;
 		private readonly int pageSize;
 
+		public string Name => tableName;
+
 		internal Table(Transaction tx, string tableName, bool checkConsistency, int pageSize = Sizes.DefaultPageSize)
 		{
 			this.tx = tx;
@@ -121,6 +123,32 @@ namespace DBTrie
 		public IAsyncEnumerable<IRow> Enumerate(ReadOnlyMemory<byte> startsWith)
 		{
 			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith));
+		}
+
+		public async ValueTask Delete()
+		{
+			if (tx._Tables.Remove(tableName))
+			{
+				if (this.cache is CacheStorage c)
+				{
+					c.Clear();
+					await c.DisposeAsync();
+					trie = null;
+					this.cache = null;
+					if (await tx.Schema.GetFileName(tableName) is ulong fileName)
+					{
+						await tx.Schema.RemoveFileName(tableName);
+						await tx.Storages.Delete(tableName);
+					}
+				}
+				await tx.Storages.Delete(tableName);
+			}
+		}
+		public async ValueTask<bool> Exists()
+		{
+			if (await tx.Schema.GetFileName(tableName) is ulong fileName)
+				return await tx.Storages.Exists(fileName.ToString());
+			return false;
 		}
 
 		class DeferredAsyncEnumerable : IAsyncEnumerable<IRow>, IAsyncEnumerator<IRow>

@@ -8,5 +8,7 @@ namespace DBTrie.Storage
 	public interface IStorages
 	{
 		ValueTask<IStorage> OpenStorage(string name);
+		ValueTask<bool> Exists(string name);
+		ValueTask Delete(string name);
 	}
 }

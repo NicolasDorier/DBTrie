@@ -17,6 +17,7 @@ namespace DBTrie
 		TaskCompletionSource<bool> _Completion;
 		internal DBTrieEngine _Engine;
 		public Schema Schema => _Engine.Schema;
+		public IStorages Storages => _Engine.Storages;
 		public Transaction(DBTrieEngine engine)
 		{
 			_Completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -24,7 +25,7 @@ namespace DBTrie
 			_Engine = engine;
 		}
 
-		public Table GetOrCreateTable(string tableName)
+		public Table GetTable(string tableName)
 		{
 			if (TryGetTable(tableName, out var table) && table is Table)
 				return table;
@@ -32,7 +33,7 @@ namespace DBTrie
 			_Tables.Add(tableName, table);
 			return table;
 		}
-		public bool TryGetTable(string tableName, out Table? table)
+		bool TryGetTable(string tableName, out Table? table)
 		{
 			if (tableName == null)
 				throw new ArgumentNullException(nameof(tableName));

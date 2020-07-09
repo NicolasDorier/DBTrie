@@ -47,6 +47,23 @@ namespace DBTrie
 			var key = await Trie.GetValue(owner.Memory);
 			return key is LTrieValue;
 		}
+
+		public async ValueTask<ulong?> GetFileName(string tableName)
+		{
+			using var owner = GetTableNameBytes(tableName);
+			var key = await Trie.GetValue(owner.Memory);
+			if (key is null)
+				return null;
+			return await Trie.StorageHelper.ReadULong(key.ValuePointer + 2);
+		}
+		public async ValueTask<bool> RemoveFileName(string tableName)
+		{
+			if (tableName == null)
+				throw new ArgumentNullException(nameof(tableName));
+			using var owner = GetTableNameBytes(tableName);
+			return await Trie.DeleteRow(owner.Memory);
+		}
+
 		public async ValueTask<ulong> GetFileNameOrCreate(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
@@ -68,7 +85,6 @@ namespace DBTrie
 			}
 			return await Trie.StorageHelper.ReadULong(key.ValuePointer + 2);
 		}
-
 		private IMemoryOwner<byte> GetTableNameBytes(string? tableName)
 		{
 			tableName ??= string.Empty;

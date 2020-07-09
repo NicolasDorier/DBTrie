@@ -15,6 +15,22 @@ namespace DBTrie.Storage
 				throw new ArgumentNullException(nameof(folderName));
 			this.folderName = folderName;
 		}
+
+		public ValueTask Delete(string name)
+		{
+			var file = Path.Combine(folderName, name);
+			File.Delete(file);
+			// Old DBReeze stuff
+			File.Delete($"{file}.rhp");
+			File.Delete($"{file}.rol");
+			return default;
+		}
+
+		public ValueTask<bool> Exists(string name)
+		{
+			return new ValueTask<bool>(File.Exists(Path.Combine(folderName, name)));
+		}
+
 		public ValueTask<IStorage> OpenStorage(string name)
 		{
 			if (name == null)
