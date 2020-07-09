@@ -31,7 +31,7 @@ namespace DBTrie.Storage
 			}
 		}
 		public IStorage InnerStorage { get; }
-		internal SortedList<long, CachePage> pages = new SortedList<long, CachePage>();
+		internal Dictionary<long, CachePage> pages = new Dictionary<long, CachePage>();
 
 		private MemoryPool<byte> MemoryPool = MemoryPool<byte>.Shared;
 		bool own;
