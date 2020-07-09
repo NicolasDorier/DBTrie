@@ -619,6 +619,15 @@ namespace DBTrie.Tests
 
 					// Reload the trie
 					trie = await ReloadTrie(trie);
+
+					// Try to defrag, for sports
+					var saved = await trie.Defragment();
+					Assert.NotEqual(0, saved);
+					Assert.True(30_000 < saved);
+
+					saved = await trie.Defragment();
+					Assert.Equal(0, saved);
+
 					// Everything kept value
 					foreach (var k in insertedKeys)
 					{
@@ -792,7 +801,6 @@ namespace DBTrie.Tests
 
 		private static async ValueTask<LTrie> ReloadTrie(LTrie trie)
 		{
-			var cache = trie.Storage as CacheStorage;
 			var trie2 = await CreateTrie(trie.Storage, trie.NodeCache is { });
 			trie2.ConsistencyCheck = trie.ConsistencyCheck;
 			return trie2;

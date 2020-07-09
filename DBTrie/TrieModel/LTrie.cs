@@ -134,7 +134,6 @@ namespace DBTrie.TrieModel
 
 		public async ValueTask<int> Defragment()
 		{
-			NodeCache?.Clear();
 			var usedMemories = new List<UsedMemory>();
 			usedMemories.Add(new UsedMemory() { Pointer = 0, Size = Sizes.RootSize, PointingTo = new List<UsedMemory>() });
 			var nodesToVisit = new Stack<(long NodePointer, long PointedFrom, UsedMemory ParentNode)>();
@@ -184,7 +183,7 @@ namespace DBTrie.TrieModel
 					}
 				}
 			}
-
+			NodeCache?.Clear();
 			int totalSaved = 0;
 			int nextOffset = Sizes.RootSize;
 			// We have a list of all memory region in use (skipping root)
@@ -218,6 +217,7 @@ namespace DBTrie.TrieModel
 				nextOffset += region.Size;
 			}
 			owner.Dispose();
+			RootPointer = await StorageHelper.ReadPointer(2);
 			await Storage.Resize(Storage.Length - totalSaved);
 			return totalSaved;
 		}
