@@ -815,6 +815,17 @@ namespace DBTrie.Tests
 				Assert.Single(elements);
 			}
 
+			// Can change the page size of internal cache storage
+			await using (var engine = await CreateEmptyEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("MyTable");
+				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
+				Assert.Equal(Sizes.DefaultPageSize, table.PageSize);
+				table.PageSize /= 2;
+				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
+			}
+
 			{
 				var engine = await CreateEmptyEngine(false);
 				var tx = await engine.OpenTransaction();

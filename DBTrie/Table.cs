@@ -13,10 +13,10 @@ namespace DBTrie
 	public class Table
 	{
 		private CacheStorage? cache;
+		private IStorage? tableFs;
 		private readonly Transaction tx;
 		private readonly string tableName;
 		bool checkConsistency;
-		private readonly int pageSize;
 
 		public string Name => tableName;
 
@@ -25,16 +25,19 @@ namespace DBTrie
 			this.tx = tx;
 			this.tableName = tableName;
 			this.checkConsistency = checkConsistency;
-			this.pageSize = pageSize;
+			this.PageSize = pageSize;
 		}
 
 		async ValueTask<CacheStorage> GetCacheStorage()
 		{
 			if (cache is CacheStorage)
 				return cache;
-			var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
-			var tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
-			cache = new CacheStorage(tableFs, true, pageSize);
+			if (tableFs is null)
+			{
+				var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
+				tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
+			}
+			cache = new CacheStorage(tableFs, false, PageSize);
 			return cache;
 		}
 
@@ -78,13 +81,19 @@ namespace DBTrie
 			{
 				cache.Clear(false);
 				await cache.DisposeAsync();
+				cache = null;
+			}
+			if (this.tableFs is FileStorage f)
+			{
+				await f.DisposeAsync();
+				tableFs = null;
 			}
 			trie = null;
 		}
 
 		internal async ValueTask Reserve()
 		{
-			 await (await this.GetCacheStorage()).ResizeInner();
+			await (await this.GetCacheStorage()).ResizeInner();
 		}
 		public async ValueTask<bool> Insert(string key, string value)
 		{
@@ -136,6 +145,11 @@ namespace DBTrie
 					trie = null;
 					this.cache = null;
 				}
+				if (this.tableFs is FileStorage f)
+				{
+					await f.DisposeAsync();
+					tableFs = null;
+				}
 			}
 			if (await tx.Schema.GetFileName(tableName) is ulong fileName)
 			{
@@ -171,6 +185,30 @@ namespace DBTrie
 			{
 				Rollback();
 				throw;
+			}
+		}
+
+		public async ValueTask<long> GetSize()
+		{
+			return (await GetTrie()).Storage.Length;
+		}
+
+		int _PageSize;
+		public int PageSize
+		{
+			get
+			{
+				return _PageSize;
+			}
+			set
+			{
+				if (cache is CacheStorage c && c.PageSize != value)
+				{
+					c.Clear(false);
+					cache = null;
+					trie = null;
+				}
+				_PageSize = value;
 			}
 		}
 
