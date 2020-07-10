@@ -34,6 +34,19 @@ namespace DBTrie
 		public IStorages Storages { get; }
 		public Schema Schema { get; }
 
+		public void ConfigureCacheSettings(CacheSettings defaultCacheSettings)
+		{
+			if (defaultCacheSettings == null)
+				throw new ArgumentNullException(nameof(defaultCacheSettings));
+			_GlobalCacheSettings = defaultCacheSettings;
+		}
+		public void ConfigureCacheSettings(string tableName, CacheSettings? cacheSettings)
+		{
+			if (tableName == null)
+				throw new ArgumentNullException(nameof(tableName));
+			_Transaction.GetTable(tableName).LocalCacheSettings = cacheSettings;
+		}
+		internal CacheSettings _GlobalCacheSettings = new CacheSettings();
 		/// <summary>
 		/// For debug, check consistency of created trie
 		/// </summary>

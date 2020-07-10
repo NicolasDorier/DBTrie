@@ -1,15 +1,82 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace DBTrie.Storage
 {
-	
+	public class CacheSettings
+	{
+		public CacheSettings()
+		{
+			PageSize = Sizes.DefaultPageSize;
+		}
+		public int PageSize { get; set; }
+		/// <summary>
+		/// If set, will evict page from the case as soon as we reach this count
+		/// </summary>
+		public int? MaxPageCount { get; set; }
+
+		/// <summary>
+		/// If true, and a page get evicted with uncommitted data, this will automatically write it down the inner storage.
+		/// </summary>
+		public bool AutoCommitEvictedPages { get; set; }
+	}
 	public class CacheStorage : IStorage, IAsyncDisposable
 	{
+		internal class LRU
+		{
+			public int Count => hashmap.Count;
+			LinkedList<long> list = new LinkedList<long>();
+			Dictionary<long, LinkedListNode<long>> hashmap = new Dictionary<long, LinkedListNode<long>>();
+			public void Accessed(long page)
+			{
+				if (hashmap.TryGetValue(page, out var node))
+				{
+					list.Remove(node);
+					list.AddLast(node);
+				}
+				else
+				{
+					node = list.AddLast(page);
+					hashmap.Add(page, node);
+				}
+				Debug.Assert(hashmap.Count == list.Count);
+			}
+			public bool TryPop(out long page)
+			{
+				if (list.Count == 0)
+				{
+					page = -1;
+					return false;
+				}
+				page = list.First.Value;
+				hashmap.Remove(page);
+				list.RemoveFirst();
+				Debug.Assert(hashmap.Count == list.Count);
+				return true;
+			}
+
+			public void Push(long page)
+			{
+				var node = list.AddFirst(page);
+				hashmap.Add(page, node);
+				Debug.Assert(hashmap.Count == list.Count);
+			}
+
+			public void Remove(long page)
+			{
+				if (hashmap.TryGetValue(page, out var node))
+				{
+					list.Remove(node);
+					hashmap.Remove(page);
+				}
+				Debug.Assert(hashmap.Count == list.Count);
+			}
+		}
 		internal class CachePage : IDisposable
 		{
 			public CachePage(int page, IMemoryOwner<byte> memory)
@@ -25,6 +92,12 @@ namespace DBTrie.Storage
 
 			public bool Dirty => WrittenLength != 0;
 
+			public async ValueTask Flush(IStorage storage, int pageSize)
+			{
+				await storage.Write(PageNumber * pageSize, Content.Slice(WrittenStart, WrittenLength));
+				WrittenStart = 0;
+				WrittenLength = 0;
+			}
 			public void Dispose()
 			{
 				_owner.Dispose();
@@ -33,16 +106,23 @@ namespace DBTrie.Storage
 		public IStorage InnerStorage { get; }
 		internal Dictionary<long, CachePage> pages = new Dictionary<long, CachePage>();
 
+
+
 		private MemoryPool<byte> MemoryPool = MemoryPool<byte>.Shared;
 		bool own;
-		public CacheStorage(IStorage inner, bool ownInner = true, int pageSize = Sizes.DefaultPageSize)
+		LRU? lru = null;
+
+		CacheSettings Settings;
+		public CacheStorage(IStorage inner, bool ownInner = true, CacheSettings? settings = null)
 		{
+			Settings = settings ?? new CacheSettings();
 			InnerStorage = inner;
-			PageSize = pageSize;
 			Length = inner.Length;
 			own = ownInner;
+			if (Settings.MaxPageCount is int)
+				lru = new LRU();
 		}
-		public int PageSize { get; }
+		public int PageSize => Settings.PageSize;
 
 		public async ValueTask Read(long offset, Memory<byte> output)
 		{
@@ -52,12 +132,14 @@ namespace DBTrie.Storage
 				output.Span.Fill(0);
 				return;
 			}
+			CachePage? page = null;
 			while (!output.IsEmpty)
 			{
-				if (!pages.TryGetValue(p, out var page))
+				if (!pages.TryGetValue(p, out page))
 				{
 					page = await FetchPage(p);
 				}
+				Accessed(p);
 				var chunkLength = Math.Min(output.Length, PageSize - pageOffset);
 				if (_LastPage == p)
 				{
@@ -72,12 +154,50 @@ namespace DBTrie.Storage
 				}
 				output = output.Slice((int)chunkLength);
 				pageOffset = 0;
-				p++;
+				p++;				
 			}
 		}
 
 		private async Task<CachePage> FetchPage(long p)
 		{
+			if (lru is LRU && Settings.MaxPageCount is int max && pages.Count >= max)
+			{
+				bool noPageToEvict = true;
+				Stack<long>? backToLRU = null;
+				while (pages.Count >= max && lru.Count > 0)
+				{
+					if (lru.TryPop(out var leastUsedPage) && 
+						pages.TryGetValue(leastUsedPage, out var lruPage))
+					{
+						bool evict = true;
+						if (lruPage.Dirty)
+						{
+							if (Settings.AutoCommitEvictedPages)
+							{
+								await lruPage.Flush(InnerStorage, PageSize);
+							}
+							else
+							{
+								evict = false;
+								backToLRU ??= new Stack<long>();
+								backToLRU.Push(leastUsedPage);
+							}
+						}
+						if (evict)
+						{
+							noPageToEvict = false;
+							lruPage.Dispose();
+							pages.Remove(lruPage.PageNumber);
+						}
+					}
+				}
+				while (backToLRU is Stack<long> s && s.TryPop(out var dirtyPop))
+				{
+					lru.Push(dirtyPop);
+				}
+				if (noPageToEvict)
+					throw new InvalidOperationException("No page available to evict from cache");
+			}
 			var owner = MemoryPool.Rent(PageSize);
 			await InnerStorage.Read(p * PageSize, owner.Memory);
 			var page = new CachePage((int)p, owner);
@@ -95,11 +215,21 @@ namespace DBTrie.Storage
 				{
 					page = await FetchPage(p);
 				}
+				Accessed(p);
 				input = WriteOnPage(page, pageOffset, input);
 				pageOffset = 0;
 				p++;
 			}
-			Length = Math.Max(Length, lastByte);
+			Length = Math.Max(Length, lastByte);			
+		}
+
+		private void Accessed(long p)
+		{
+			if (lru is LRU)
+			{
+				lru.Accessed(p);
+				Debug.Assert(lru.Count == pages.Count);
+			}
 		}
 
 		private ReadOnlyMemory<byte> WriteOnPage(CachePage page, long pageOffset, ReadOnlyMemory<byte> input)
@@ -159,12 +289,11 @@ namespace DBTrie.Storage
 						{
 							foreach (var page in toRemove)
 							{
+								lru?.Remove(page);
 								pages.Remove(page);
 							}
 						}
 					}
-					
-					
 				}
 			}
 		}
@@ -176,9 +305,7 @@ namespace DBTrie.Storage
 			await InnerStorage.Resize(Length);
 			foreach(var page in pages.Where(p => p.Value.Dirty))
 			{
-				await InnerStorage.Write(page.Key * PageSize, page.Value.Content.Slice(page.Value.WrittenStart, page.Value.WrittenLength));
-				page.Value.WrittenStart = 0;
-				page.Value.WrittenLength = 0;
+				await page.Value.Flush(InnerStorage, PageSize);
 			}
 			await InnerStorage.Flush();
 		}
@@ -202,6 +329,7 @@ namespace DBTrie.Storage
 			}
 			foreach (var page in toRemove)
 			{
+				lru?.Remove(page);
 				pages.Remove(page);
 			}
 			return toRemove.Count > 0;

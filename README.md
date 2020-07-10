@@ -87,7 +87,7 @@ static async Task Main(string args)
 When data is deleted, DBTrie does not immediately free the RAM and storage that was consumed by this data.
 For this you need to defragment your tables once in a while.
 
-This operation is bringing the whole table in RAM and iterating over all the saved values, so you should not use it too often.
+This operation is iterating over all the saved values, so you should not use it too often and might be quite lengthy.
 ```csharp
 static async Task Main(string args)
 {

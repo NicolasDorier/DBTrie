@@ -153,7 +153,7 @@ namespace DBTrie.Tests
 		{
 			CreateEmptyFile("Empty", 1030);
 			await using var fs = new FileStorage("Empty");
-			var cache = new CacheStorage(fs, pageSize: 128);
+			var cache = new CacheStorage(fs, true, new CacheSettings() { PageSize = 128 });
 			await fs.Write(125, "abcdefgh");
 			Assert.Equal("abcdefgh", await cache.Read(125, "abcdefgh".Length));
 			Assert.Equal("abcdefgh", await fs.Read(125, "abcdefgh".Length));
@@ -185,6 +185,73 @@ namespace DBTrie.Tests
 			Assert.Equal(l + 10 + 1, fs.Length);
 			await fs.Resize(l + 10 + 1 + 0);
 			Assert.Equal(l + 10 + 1 + 0, fs.Length);
+		}
+		[Fact]
+		public async Task CanCacheWithLRU()
+		{
+			CreateEmptyFile("CanCacheWithLRU", 100);
+			await using var fs = new FileStorage("CanCacheWithLRU");
+			var cache = new CacheStorage(fs, false, new CacheSettings()
+			{
+				PageSize = 10,
+				MaxPageCount = 2,
+				AutoCommitEvictedPages = false
+			});
+			// If we write on 1 page, all is well.
+			await cache.Write(0, CreateString(5));
+			Assert.Contains(0, cache.pages.Keys);
+			Assert.Single(cache.pages);
+			await cache.Read(10, 1);
+			Assert.Contains(1, cache.pages.Keys);
+			Assert.Equal(2, cache.pages.Count);
+			// we now write on 3rd page, the second is only read so should be evicted
+			await cache.Write(20, "a");
+			Assert.DoesNotContain(1, cache.pages.Keys);
+			Assert.Contains(0, cache.pages.Keys);
+			Assert.Contains(2, cache.pages.Keys);
+			Assert.Equal(2, cache.pages.Count);
+
+			// We write on the 4rd, but because both the 3rd and the 1st page are written, it should throw
+			await Assert.ThrowsAsync<InvalidOperationException>(async () => await cache.Write(30, "a"));
+		}
+
+		private static string CreateString(int len)
+		{
+			return new String(Enumerable.Range(0, len).Select(_ => 'a').ToArray());
+		}
+
+		[Fact]
+		public void LRUTest()
+		{
+			var lru = new CacheStorage.LRU();
+			lru.Accessed(1);
+			lru.Accessed(2);
+			lru.Accessed(3);
+			Assert.True(lru.TryPop(out var p) && p == 1);
+			Assert.True(lru.TryPop(out p) && p == 2);
+			Assert.True(lru.TryPop(out p) && p == 3);
+			Assert.False(lru.TryPop(out p));
+			lru.Accessed(1);
+			lru.Accessed(2);
+			lru.Accessed(3);
+			Assert.True(lru.TryPop(out p) && p == 1);
+			lru.Accessed(2);
+			Assert.True(lru.TryPop(out p) && p == 3);
+			Assert.True(lru.TryPop(out p) && p == 2);
+			Assert.False(lru.TryPop(out p));
+			lru.Accessed(1);
+			lru.Accessed(2);
+			lru.Accessed(3);
+			lru.Accessed(1);
+			Assert.True(lru.TryPop(out p) && p == 2);
+			Assert.True(lru.TryPop(out p) && p == 3);
+			Assert.True(lru.TryPop(out p) && p == 1);
+			Assert.False(lru.TryPop(out p));
+
+			lru.Push(1);
+			lru.Push(2);
+			lru.Push(3);
+			Assert.True(lru.TryPop(out p) && p == 3);
 		}
 
 		[Fact]
@@ -378,17 +445,14 @@ namespace DBTrie.Tests
 				var table = tx.GetTable("Transactions");
 				countBefore = (await table.Enumerate().ToArrayAsync()).Length;
 				var trie = await table.GetTrie();
-				var cacheLengthBefore = ((CacheStorage)trie.Storage).Length;
-				var fsLengthBefore = ((CacheStorage)trie.Storage).InnerStorage.Length;
+				var lengthBefore = ((CacheStorage)trie.Storage).Length;
+				Assert.Equal(lengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
 				var saving = await table.Defragment();
 				Assert.NotEqual(0, saving);
 				Assert.Equal(0, await table.Defragment());
-				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
-				Assert.Equal(fsLengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
-				Assert.Equal(cacheLengthBefore, ((CacheStorage)trie.Storage).Length + saving);
-				await tx.Commit();
-				Assert.Equal(fsLengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length + saving);
-				Assert.Equal(cacheLengthBefore, ((CacheStorage)trie.Storage).Length + saving);
+				trie = await table.GetTrie();
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).Length);
 				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
 			}
 			await using (var engine = await CreateEngine(false))
@@ -821,8 +885,8 @@ namespace DBTrie.Tests
 				using var tx = await engine.OpenTransaction();
 				var table = tx.GetTable("MyTable");
 				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
-				Assert.Equal(Sizes.DefaultPageSize, table.PageSize);
-				table.PageSize /= 2;
+				Assert.Equal(Sizes.DefaultPageSize, table.CacheSettings.PageSize);
+				table.LocalCacheSettings = new CacheSettings();
 				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
 			}
 

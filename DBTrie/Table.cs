@@ -20,12 +20,11 @@ namespace DBTrie
 
 		public string Name => tableName;
 
-		internal Table(Transaction tx, string tableName, bool checkConsistency, int pageSize = Sizes.DefaultPageSize)
+		internal Table(Transaction tx, string tableName, bool checkConsistency)
 		{
 			this.tx = tx;
 			this.tableName = tableName;
 			this.checkConsistency = checkConsistency;
-			this.PageSize = pageSize;
 		}
 
 		async ValueTask<CacheStorage> GetCacheStorage()
@@ -37,7 +36,7 @@ namespace DBTrie
 				var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
 				tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
 			}
-			cache = new CacheStorage(tableFs, false, PageSize);
+			cache = new CacheStorage(tableFs, false, CacheSettings);
 			return cache;
 		}
 
@@ -77,18 +76,12 @@ namespace DBTrie
 
 		internal async ValueTask DisposeAsync()
 		{
-			if (cache is CacheStorage)
-			{
-				cache.Clear(false);
-				await cache.DisposeAsync();
-				cache = null;
-			}
+			ClearTrie();
 			if (this.tableFs is FileStorage f)
 			{
 				await f.DisposeAsync();
 				tableFs = null;
 			}
-			trie = null;
 		}
 
 		internal async ValueTask Reserve()
@@ -138,13 +131,7 @@ namespace DBTrie
 		{
 			if (tx._Tables.Remove(tableName))
 			{
-				if (this.cache is CacheStorage c)
-				{
-					c.Clear(false);
-					await c.DisposeAsync();
-					trie = null;
-					this.cache = null;
-				}
+				ClearTrie();
 				if (this.tableFs is FileStorage f)
 				{
 					await f.DisposeAsync();
@@ -157,6 +144,16 @@ namespace DBTrie
 				await tx.Storages.Delete(fileName.ToString());
 			}
 			await tx.Storages.Delete(tableName);
+		}
+
+		private void ClearTrie()
+		{
+			if (this.cache is CacheStorage c)
+			{
+				c.Clear(false);
+				cache = null;
+			}
+			trie = null;
 		}
 
 		public void ClearCache()
@@ -174,17 +171,27 @@ namespace DBTrie
 		/// Reclaim unused space
 		/// </summary>
 		/// <returns>The number of bytes saved</returns>
-		public async ValueTask<int> Defragment()
+		public async ValueTask<int> Defragment(int maxPageCountInMemory = 256)
 		{
-			var trie = await GetTrie();
+			ClearTrie();
+			var oldCacheSettings = _CacheSettings;
 			try
 			{
-				return await trie.Defragment();
+				_CacheSettings = new CacheSettings()
+				{
+					PageSize = CacheSettings.PageSize,
+					MaxPageCount = maxPageCountInMemory,
+					AutoCommitEvictedPages = true
+				};
+				var trie = await GetTrie();
+				var saved = await trie.Defragment();
+				await Commit();
+				return saved;
 			}
-			catch
+			finally
 			{
-				Rollback();
-				throw;
+				_CacheSettings = oldCacheSettings;
+				ClearTrie();
 			}
 		}
 
@@ -192,23 +199,35 @@ namespace DBTrie
 		{
 			return (await GetTrie()).Storage.Length;
 		}
+		public async ValueTask<long> GetRecordCount()
+		{
+			return (await GetTrie()).RecordCount;
+		}
 
-		int _PageSize;
-		public int PageSize
+		internal CacheSettings? _CacheSettings;
+		internal CacheSettings? LocalCacheSettings
 		{
 			get
 			{
-				return _PageSize;
+				return _CacheSettings;
 			}
 			set
 			{
-				if (cache is CacheStorage c && c.PageSize != value)
-				{
-					c.Clear(false);
-					cache = null;
-					trie = null;
-				}
-				_PageSize = value;
+				ClearTrie();
+				_CacheSettings = value;
+			}
+		}
+
+		/// <summary>
+		/// The cache settings of this table, can get configured via the <see cref="DBTrieEngine"/>
+		/// </summary>
+		public CacheSettings CacheSettings => _CacheSettings ?? GlobalCacheSettings;
+
+		internal CacheSettings GlobalCacheSettings
+		{
+			get 
+			{
+				return tx._Engine._GlobalCacheSettings;
 			}
 		}
 
