@@ -153,7 +153,7 @@ namespace DBTrie.TrieModel
 				usedMemories.Add(nodeMemory);
 				if (node.InternalLink is Link internalLink)
 				{
-					var v = await ReadValue(internalLink.Pointer);
+					using var v = await ReadValue(internalLink.Pointer);
 					var valueMem = new UsedMemory()
 					{
 						Pointer = v.Pointer,
@@ -171,7 +171,7 @@ namespace DBTrie.TrieModel
 					}
 					else
 					{
-						var v = await ReadValue(externalLink.Pointer);
+						using var v = await ReadValue(externalLink.Pointer);
 						var valueMem = new UsedMemory()
 						{
 							Pointer = v.Pointer,
