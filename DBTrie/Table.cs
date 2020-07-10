@@ -135,14 +135,14 @@ namespace DBTrie
 					await c.DisposeAsync();
 					trie = null;
 					this.cache = null;
-					if (await tx.Schema.GetFileName(tableName) is ulong fileName)
-					{
-						await tx.Schema.RemoveFileName(tableName);
-						await tx.Storages.Delete(tableName);
-					}
 				}
-				await tx.Storages.Delete(tableName);
 			}
+			if (await tx.Schema.GetFileName(tableName) is ulong fileName)
+			{
+				await tx.Schema.RemoveFileName(tableName);
+				await tx.Storages.Delete(fileName.ToString());
+			}
+			await tx.Storages.Delete(tableName);
 		}
 
 		public void ClearCache()

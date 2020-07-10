@@ -398,6 +398,20 @@ namespace DBTrie.Tests
 				Assert.Equal(0, await table.Defragment());
 				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
 			}
+
+			await using (var engine = await CreateEngine(false))
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				// Make sure table is open
+				await table.Get("test");
+				var tableFile = Path.Combine(nameof(CanDefragment), "10000007");
+				Assert.True(File.Exists(tableFile));
+				await table.Delete();
+				Assert.False(File.Exists(tableFile));
+				// No burn if double delete
+				await table.Delete();
+			}
 		}
 
 		[Fact]
