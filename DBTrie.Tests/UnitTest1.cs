@@ -436,7 +436,7 @@ namespace DBTrie.Tests
 					now = DateTimeOffset.UtcNow;
 					await foreach (var row in trie.EnumerateStartsWith(""))
 					{
-
+						row.Dispose();
 					}
 					logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 					now = DateTimeOffset.UtcNow;
@@ -444,8 +444,28 @@ namespace DBTrie.Tests
 					{
 						using var owner = trie.MemoryPool.Rent(row.ValueLength);
 						await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
+						row.Dispose();
 					}
 					logs.WriteLine($"Enumerate values : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+
+					logs.WriteLine($"Defrag saved {await trie.Defragment()} bytes");
+					await trie.Storage.Flush();
+					trie = await ReloadTrie(trie);
+					if (trie.Storage is CacheStorage c)
+						c.Clear(false);
+					now = DateTimeOffset.UtcNow;
+					await foreach (var row in trie.EnumerateStartsWith(""))
+					{
+						row.Dispose();
+					}
+					logs.WriteLine($"Enumerate values after defrag: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+
+					now = DateTimeOffset.UtcNow;
+					await foreach (var row in trie.EnumerateStartsWith(""))
+					{
+						row.Dispose();
+					}
+					logs.WriteLine($"Enumerate values after defrag 2 times: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 				}
 		}
 

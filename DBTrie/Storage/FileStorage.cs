@@ -11,7 +11,8 @@ namespace DBTrie.Storage
 		string _fileName;
 		private FileStream _fsData;
 
-		public FileStorage(string fileName, int bufferSize = Sizes.DefaultPageSize)
+		// The buffer does not need to be big as DBTrie users are using the CacheStorage which decide what will be the size of read/write
+		public FileStorage(string fileName, int bufferSize = 1024)
 		{
 			if (fileName == null)
 				throw new ArgumentNullException(nameof(fileName));
@@ -30,7 +31,8 @@ namespace DBTrie.Storage
 
 		public async ValueTask Write(long offset, ReadOnlyMemory<byte> input)
 		{
-			_fsData.Seek(offset, SeekOrigin.Begin);
+			if (_fsData.Position != offset)
+				_fsData.Seek(offset, SeekOrigin.Begin);
 			await _fsData.WriteAsync(input);
 		}
 
