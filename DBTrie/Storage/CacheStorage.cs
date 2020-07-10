@@ -24,6 +24,16 @@ namespace DBTrie.Storage
 		/// If true, and a page get evicted with uncommitted data, this will automatically write it down the inner storage.
 		/// </summary>
 		public bool AutoCommitEvictedPages { get; set; }
+
+		public CacheSettings Clone()
+		{
+			return new CacheSettings()
+			{
+				PageSize = PageSize,
+				MaxPageCount = MaxPageCount,
+				AutoCommitEvictedPages = AutoCommitEvictedPages
+			};
+		}
 	}
 	public class CacheStorage : IStorage, IAsyncDisposable
 	{

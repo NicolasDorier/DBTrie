@@ -171,18 +171,15 @@ namespace DBTrie
 		/// Reclaim unused space
 		/// </summary>
 		/// <returns>The number of bytes saved</returns>
-		public async ValueTask<int> Defragment(int maxPageCountInMemory = 256)
+		public async ValueTask<int> Defragment()
 		{
 			ClearTrie();
-			var oldCacheSettings = _CacheSettings;
+			var oldCacheSettings = _LocalCacheSettings;
 			try
 			{
-				_CacheSettings = new CacheSettings()
-				{
-					PageSize = CacheSettings.PageSize,
-					MaxPageCount = maxPageCountInMemory,
-					AutoCommitEvictedPages = true
-				};
+				var temp = CacheSettings.Clone();
+				temp.AutoCommitEvictedPages = true;
+				_LocalCacheSettings = temp;
 				var trie = await GetTrie();
 				var saved = await trie.Defragment();
 				await Commit();
@@ -190,7 +187,7 @@ namespace DBTrie
 			}
 			finally
 			{
-				_CacheSettings = oldCacheSettings;
+				_LocalCacheSettings = oldCacheSettings;
 				ClearTrie();
 			}
 		}
@@ -204,24 +201,24 @@ namespace DBTrie
 			return (await GetTrie()).RecordCount;
 		}
 
-		internal CacheSettings? _CacheSettings;
+		internal CacheSettings? _LocalCacheSettings;
 		internal CacheSettings? LocalCacheSettings
 		{
 			get
 			{
-				return _CacheSettings;
+				return _LocalCacheSettings;
 			}
 			set
 			{
 				ClearTrie();
-				_CacheSettings = value;
+				_LocalCacheSettings = value;
 			}
 		}
 
 		/// <summary>
 		/// The cache settings of this table, can get configured via the <see cref="DBTrieEngine"/>
 		/// </summary>
-		public CacheSettings CacheSettings => _CacheSettings ?? GlobalCacheSettings;
+		public CacheSettings CacheSettings => _LocalCacheSettings ?? GlobalCacheSettings;
 
 		internal CacheSettings GlobalCacheSettings
 		{
