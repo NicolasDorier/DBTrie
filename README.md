@@ -30,7 +30,7 @@ static async Task Main(string args)
 static async Task Main(string args)
 {
 	Directory.CreateDirectory("Db");
-	await using var engine = await DBTrieEngine.OpenFromFolder("Db");
+	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		// ....
 		tx.Delete("MyKey");
@@ -68,7 +68,7 @@ static async Task Main(string args)
 static async Task Main(string args)
 {
 	Directory.CreateDirectory("Db");
-	await using var engine = await DBTrieEngine.OpenFromFolder("Db");
+	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		// ....
 		using (var row = await tx.Get("MyKey"))
