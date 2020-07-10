@@ -33,7 +33,8 @@ static async Task Main(string args)
 	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		// ....
-		tx.Delete("MyKey");
+		var table = tx.GetTable("MyTable");
+		table.Delete("MyKey");
 		tx.Commit();
 		// ...
 	}
@@ -71,10 +72,31 @@ static async Task Main(string args)
 	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
 		// ....
-		using (var row = await tx.Get("MyKey"))
+		var table = tx.GetTable("MyTable");
+		using (var row = await table.Get("MyKey"))
 		{
 			// Do things...
 		}
+		// ...
+	}
+}
+```
+
+### How to defragment your table
+
+When data is deleted, DBTrie does not immediately free the RAM and storage that was consumed by this data.
+For this you need to defragment your tables once in a while.
+
+This operation is bringing the whole table in RAM and iterating over all the saved values, so you should not use it too often.
+```csharp
+static async Task Main(string args)
+{
+	Directory.CreateDirectory("Db");
+	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
+	{
+		// ....
+		var table = tx.GetTable("MyTable");
+		await table.Defragment()
 		// ...
 	}
 }
@@ -86,11 +108,11 @@ static async Task Main(string args)
 * Think of disposing the `IRow` you get from a table. This decrease the pressure on the garbage collector.
 * Think of disposing the `Transaction` you get from the engine.
 * Do not create many tables, each table is backed by a file on disk.
+* Defragment your table once in a while to decrease RAM and storage consumption.
 
 ## Todo
 
 * Currently, only a single transaction can be processed at same time. It should be possible to allow concurrent transactions if those do not use the same tables.
-* Deleting data does not free up storage space. For freeing storage space, we should try to compact the database when opening the engine.
 * We cache the underlying file of each table in-memory. We should evict the least used pages to save memory.
 
 ## License
