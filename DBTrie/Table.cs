@@ -57,7 +57,7 @@ namespace DBTrie
 		}
 		internal void Rollback()
 		{
-			if (this.cache is CacheStorage c && c.Clear())
+			if (this.cache is CacheStorage c && c.Clear(true))
 				trie = null;
 		}
 
@@ -76,7 +76,7 @@ namespace DBTrie
 		{
 			if (cache is CacheStorage)
 			{
-				this.cache.Clear();
+				cache.Clear(false);
 				await cache.DisposeAsync();
 			}
 			trie = null;
@@ -131,7 +131,7 @@ namespace DBTrie
 			{
 				if (this.cache is CacheStorage c)
 				{
-					c.Clear();
+					c.Clear(false);
 					await c.DisposeAsync();
 					trie = null;
 					this.cache = null;
@@ -143,6 +143,11 @@ namespace DBTrie
 				}
 				await tx.Storages.Delete(tableName);
 			}
+		}
+
+		public void ClearCache()
+		{
+			cache?.Clear(false);
 		}
 		public async ValueTask<bool> Exists()
 		{
@@ -158,7 +163,15 @@ namespace DBTrie
 		public async ValueTask<int> Defragment()
 		{
 			var trie = await GetTrie();
-			return await trie.Defragment();
+			try
+			{
+				return await trie.Defragment();
+			}
+			catch
+			{
+				Rollback();
+				throw;
+			}
 		}
 
 		class DeferredAsyncEnumerable : IAsyncEnumerable<IRow>, IAsyncEnumerator<IRow>

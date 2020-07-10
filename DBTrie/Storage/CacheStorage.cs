@@ -192,14 +192,10 @@ namespace DBTrie.Storage
 			await InnerStorage.Resize(Length);
 		}
 
-		/// <summary>
-		/// Remove written page from cache
-		/// </summary>
-		/// <returns>true if at least a single page got removed</returns>
-		public bool Clear()
+		public bool Clear(bool clearOnlyWrittenPages)
 		{
 			List<long> toRemove = new List<long>();
-			foreach (var page in pages.Where(p => p.Value.Dirty))
+			foreach (var page in pages.Where(p => !clearOnlyWrittenPages || p.Value.Dirty))
 			{
 				toRemove.Add(page.Key);
 				page.Value.Dispose();
@@ -216,8 +212,7 @@ namespace DBTrie.Storage
 			await Flush();
 			if (own)
 				await InnerStorage.DisposeAsync();
-			foreach (var page in pages)
-				page.Value.Dispose();
+			Clear(false);
 			pages.Clear();
 		}
 
