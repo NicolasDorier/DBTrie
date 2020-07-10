@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DBTrie.TrieModel
@@ -132,7 +133,7 @@ namespace DBTrie.TrieModel
 			};
 		}
 
-		public async ValueTask<int> Defragment()
+		public async ValueTask<int> Defragment(CancellationToken cancellationToken = default)
 		{
 			var usedMemories = new List<UsedMemory>();
 			usedMemories.Add(new UsedMemory() { Pointer = 0, Size = Sizes.RootSize, PointingTo = new List<UsedMemory>() });
@@ -140,6 +141,7 @@ namespace DBTrie.TrieModel
 			nodesToVisit.Push((RootPointer, 2, usedMemories[0]));
 			while(nodesToVisit.Count > 0)
 			{
+				cancellationToken.ThrowIfCancellationRequested();
 				var current = nodesToVisit.Pop();
 				var node = await ReadNode(current.NodePointer, -1, false);
 				var nodeMemory = new UsedMemory()
@@ -190,6 +192,7 @@ namespace DBTrie.TrieModel
 			var owner = MemoryPool.Rent(256);
 			foreach (var region in usedMemories.OrderBy(u => u.Pointer).Skip(1))
 			{
+				// We can't cancel mid-way
 				var gap = (int)(region.Pointer - nextOffset);
 				if (gap > 0)
 				{
