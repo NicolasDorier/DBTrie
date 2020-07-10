@@ -296,7 +296,7 @@ namespace DBTrie.TrieModel
 				return cached;
 			}
 			using var owner = MemoryPool.Rent(Sizes.MaximumNodeSize);
-			var memory = owner.Memory.Slice(Sizes.MaximumNodeSize);
+			var memory = owner.Memory.Slice(0, Sizes.MaximumNodeSize);
 			await Storage.Read(pointer, memory);
 			var node = new LTrieNode(this, minKeyLength, pointer, memory);
 			if (useCache)
