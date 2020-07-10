@@ -693,6 +693,46 @@ namespace DBTrie.Tests
 		}
 
 		[Fact]
+		public async Task CanSetLotsOfKeysSaturatingNodes()
+		{
+			await using (var engine = await CreateEmptyEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				var test = tx.GetTable("Test");
+				var allBytes = Enumerable.Range(0, 256).Select(o => (byte)o).ToArray();
+				for (int i = 0; i < allBytes.Length; i++)
+				{
+					await test.Insert(new byte[] { (byte)i }, new byte[] { (byte)i });
+				}
+				for (int i = 0; i < allBytes.Length; i++)
+				{
+					await test.Insert(new byte[] { (byte)i, 0 }, new byte[] { (byte)i, 0 });
+				}
+				for (int i = 0; i < allBytes.Length; i++)
+				{
+					var row = await test.Get(new byte[] { (byte)i });
+					using(row)
+					{
+						Assert.NotNull(row);
+						Assert.Equal(1, row!.ValueLength);
+						var v = await row.ReadValue();
+						Assert.Equal((byte)i, v.Span[0]);
+					}
+					row.Dispose();
+					row = await test.Get(new byte[] { (byte)i, 0 });
+					using (row)
+					{
+						Assert.NotNull(row);
+						Assert.Equal(2, row!.ValueLength);
+						var v = await row.ReadValue();
+						Assert.Equal((byte)i, v.Span[0]);
+						Assert.Equal((byte)0, v.Span[1]);
+					}
+				}
+			}
+		}
+
+		[Fact]
 		public async Task CanUseDBEngine()
 		{
 			await using (var engine = await CreateEngine())
