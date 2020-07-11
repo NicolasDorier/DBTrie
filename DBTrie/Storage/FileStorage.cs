@@ -62,5 +62,11 @@ namespace DBTrie.Storage
 				_fsData.SetLength(newSize);
 			}
 		}
+
+		public bool TryDirectRead(long offset, long length, out ReadOnlyMemory<byte> output)
+		{
+			output = default;
+			return false;
+		}
 	}
 }

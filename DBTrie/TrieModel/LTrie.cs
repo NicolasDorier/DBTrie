@@ -3,6 +3,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Data.SqlTypes;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -74,8 +75,8 @@ namespace DBTrie.TrieModel
 				throw new FormatException("Impossible to parse the trie");
 			if (span[1] != 1)
 				throw new FormatException("Impossible to parse the trie");
-			var link = (long)span.Slice(2, Sizes.DefaultPointerLen).BigEndianToLongDynamic();
-			var count = (long)span.Slice(2 + Sizes.DefaultPointerLen, 8).BigEndianToLongDynamic();
+			var link = (long)span.Slice(2).BigEndianToLongDynamic();
+			var count = (long)span.Slice(2 + Sizes.DefaultPointerLen).ReadUInt64BigEndian();
 			if (DBreezeMagic.AsSpan().SequenceCompareTo(span.Slice(2 + Sizes.DefaultPointerLen + 8, DBreezeMagic.Length)) != 0)
 				throw new FormatException("Impossible to parse the trie");
 			return new LTrie(storage, link, count, memoryPool);
@@ -295,13 +296,42 @@ namespace DBTrie.TrieModel
 				await cached.AssertConsistency();
 				return cached;
 			}
-			using var owner = MemoryPool.Rent(Sizes.MaximumNodeSize);
-			var memory = owner.Memory.Slice(0, Sizes.MaximumNodeSize);
-			await Storage.Read(pointer, memory);
-			var node = new LTrieNode(this, minKeyLength, pointer, memory);
+
+			var node = await FetchNode(pointer, minKeyLength);
 			if (useCache)
 				NodeCache?.Add(pointer, node);
 			return node;
+		}
+
+		private async ValueTask<LTrieNode> FetchNode(long pointer, int minKeyLength)
+		{
+			int lineLength = -1;
+			// We try reading directly from the buffer without copy
+			if (Storage.TryDirectRead(pointer, Sizes.NodeMinSize, out var memory))
+			{
+				lineLength = memory.Span.ReadUInt16BigEndian();
+				var nodeSize = 2 + lineLength;
+				if (nodeSize == Sizes.NodeMinSize)
+					return new LTrieNode(this, minKeyLength, pointer, memory);
+				if (nodeSize < Sizes.NodeMinSize)
+					throw new FormatException("Invalid node size");
+				if (Storage.TryDirectRead(pointer, nodeSize, out memory))
+					return new LTrieNode(this, minKeyLength, pointer, memory);
+			}
+
+			// If that fail, fallback
+			{
+				var nodeSize = lineLength == -1 ? Sizes.MaximumNodeSize : 2 + lineLength;
+				using var owner = MemoryPool.Rent(nodeSize);
+				var outputMemory = owner.Memory.Slice(0, nodeSize);
+				await Storage.Read(pointer, outputMemory);
+				if (lineLength == -1)
+				{
+					lineLength = ((ReadOnlySpan<byte>)outputMemory.Span).ReadUInt16BigEndian();
+					outputMemory = outputMemory.Slice(0, 2 + lineLength);
+				}
+				return new LTrieNode(this, minKeyLength, pointer, outputMemory);
+			}
 		}
 
 		public async ValueTask<LTrieValue?> GetValue(string key)

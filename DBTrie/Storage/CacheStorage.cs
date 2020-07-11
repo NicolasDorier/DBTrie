@@ -359,5 +359,23 @@ namespace DBTrie.Storage
 			Length = newLength;
 			return default;
 		}
+
+		public bool TryDirectRead(long offset, long length, out ReadOnlyMemory<byte> output)
+		{
+			output = default;
+			if (length > PageSize)
+				return false;
+			var p = Math.DivRem(offset, PageSize, out var pageOffset);
+			if (p > _LastPage)
+				return false;
+			var pageLength = p == _LastPage ? _LastPageLength : PageSize;
+			if (pageOffset + length > pageLength)
+				return false;
+			if (!pages.TryGetValue(p, out var page))
+				return false;
+			Accessed(p);
+			output = page.Content.Slice((int)pageOffset, (int)length);
+			return true;
+		}
 	}
 }

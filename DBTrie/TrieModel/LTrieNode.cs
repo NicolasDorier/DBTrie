@@ -20,8 +20,8 @@ namespace DBTrie.TrieModel
 			MinKeyLength = minKeyLength;
 			OwnPointer = pointer;
 			ushort lineLen = memory.Span.ReadUInt16BigEndian();
-			LineLength = lineLen;
-			var internalLinkPointer = (long)memory.Span.Slice(2, Sizes.DefaultPointerLen).BigEndianToLongDynamic();
+			LineLength = memory.Length - 2;
+			var internalLinkPointer = (long)memory.Span.Slice(2).BigEndianToLongDynamic();
 			if (internalLinkPointer != 0)
 			{
 				InternalLink = new Link(null)
@@ -37,7 +37,7 @@ namespace DBTrie.TrieModel
 			{
 				var slotPointer = OwnPointer + 2 + Sizes.DefaultPointerLen + j;
 				var i = memory.Span[j];
-				var linkPointer = (long)memory.Span.Slice(j + 2, Sizes.DefaultPointerLen).BigEndianToLongDynamic();
+				var linkPointer = (long)memory.Span.Slice(j + 2).BigEndianToLongDynamic();
 				if (linkPointer == 0 || GetLink(i) is Link)
 				{
 					FreeSlotPointers.Enqueue(slotPointer);
@@ -51,7 +51,7 @@ namespace DBTrie.TrieModel
 			}
 		}
 
-		SortedList<byte, Link> externalLinks { get; } = new SortedList<byte, Link>();
+		SortedList<byte, Link> externalLinks;
 		public Link? GetLink(byte value)
 		{
 			externalLinks.TryGetValue(value, out var k);

@@ -149,6 +149,33 @@ namespace DBTrie.Tests
 		}
 
 		[Fact]
+		public async Task CanUseCacheFastGet()
+		{
+			CreateEmptyFile("CanUseCacheFastGet", 105);
+			await using var fs = new FileStorage("CanUseCacheFastGet");
+			var cache = new CacheStorage(fs, true, new CacheSettings() { PageSize = 10 });
+			Assert.False(cache.TryDirectRead(0, 1, out var mem));
+			await cache.Read(0, 1);
+			Assert.True(cache.TryDirectRead(0, 1, out mem));
+			Assert.True(cache.TryDirectRead(9, 1, out mem));
+			Assert.False(cache.TryDirectRead(10, 1, out mem));
+			Assert.False(cache.TryDirectRead(9, 2, out mem));
+			Assert.False(cache.TryDirectRead(0, 11, out mem));
+			await cache.Read(100, 1);
+			Assert.True(cache.TryDirectRead(104, 1, out mem));
+			Assert.False(cache.TryDirectRead(105, 1, out mem));
+			Assert.False(cache.TryDirectRead(106, 1, out mem));
+			Assert.False(cache.TryDirectRead(104, 2, out mem));
+			Assert.False(cache.TryDirectRead(110, 1, out mem));
+
+			Assert.True(cache.TryDirectRead(100, 5, out mem));
+			Assert.Equal(5, mem.Length);
+			await cache.Write(101, "helo");
+			Assert.True(cache.TryDirectRead(101, 4, out mem));
+			Assert.Equal("helo", Encoding.UTF8.GetString(mem.Span));
+		}
+
+		[Fact]
 		public async Task CacheTests()
 		{
 			CreateEmptyFile("Empty", 1030);
@@ -481,56 +508,59 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanListTransactions()
 		{
-			foreach (bool allowTrieCache in new[] { false })
-				foreach (bool cacheStorageLayer in new[] { true })
-				{
-					logs.WriteLine($"allowTrieCache: {allowTrieCache}");
-					logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
-					await using var fs = CreateFileStorage("10000007", cacheStorageLayer);
-					LTrie trie = await CreateTrie(fs, allowTrieCache);
-					trie.ConsistencyCheck = false;
-					DateTimeOffset now = DateTimeOffset.UtcNow;
-					int records = 0;
-					await foreach (var row in trie.EnumerateStartsWith(""))
+			for (int i = 0; i < 1; i++)
+			{
+				foreach (bool allowTrieCache in new[] { false })
+					foreach (bool cacheStorageLayer in new[] { true })
 					{
-						records++;
-					}
-					logs.WriteLine($"Record count : {records}");
-					logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartsWith(""))
-					{
-						row.Dispose();
-					}
-					logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartsWith(""))
-					{
-						using var owner = trie.MemoryPool.Rent(row.ValueLength);
-						await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
-						row.Dispose();
-					}
-					logs.WriteLine($"Enumerate values : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+						logs.WriteLine($"allowTrieCache: {allowTrieCache}");
+						logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
+						await using var fs = CreateFileStorage("10000007", cacheStorageLayer);
+						LTrie trie = await CreateTrie(fs, allowTrieCache);
+						trie.ConsistencyCheck = false;
+						DateTimeOffset now = DateTimeOffset.UtcNow;
+						int records = 0;
+						await foreach (var row in trie.EnumerateStartsWith(""))
+						{
+							records++;
+						}
+						logs.WriteLine($"Record count : {records}");
+						logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+						now = DateTimeOffset.UtcNow;
+						await foreach (var row in trie.EnumerateStartsWith(""))
+						{
+							row.Dispose();
+						}
+						logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+						now = DateTimeOffset.UtcNow;
+						await foreach (var row in trie.EnumerateStartsWith(""))
+						{
+							using var owner = trie.MemoryPool.Rent(row.ValueLength);
+							await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
+							row.Dispose();
+						}
+						logs.WriteLine($"Enumerate values : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 
-					logs.WriteLine($"Defrag saved {await trie.Defragment()} bytes");
-					await trie.Storage.Flush();
-					trie = await ReloadTrie(trie);
-					if (trie.Storage is CacheStorage c)
-						c.Clear(false);
-					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartsWith(""))
-					{
-						row.Dispose();
-					}
-					logs.WriteLine($"Enumerate values after defrag: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+						//logs.WriteLine($"Defrag saved {await trie.Defragment()} bytes");
+						//await trie.Storage.Flush();
+						//trie = await ReloadTrie(trie);
+						//if (trie.Storage is CacheStorage c)
+						//	c.Clear(false);
+						//now = DateTimeOffset.UtcNow;
+						//await foreach (var row in trie.EnumerateStartsWith(""))
+						//{
+						//	row.Dispose();
+						//}
+						//logs.WriteLine($"Enumerate values after defrag: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 
-					now = DateTimeOffset.UtcNow;
-					await foreach (var row in trie.EnumerateStartsWith(""))
-					{
-						row.Dispose();
+						//now = DateTimeOffset.UtcNow;
+						//await foreach (var row in trie.EnumerateStartsWith(""))
+						//{
+						//	row.Dispose();
+						//}
+						//logs.WriteLine($"Enumerate values after defrag 2 times: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
 					}
-					logs.WriteLine($"Enumerate values after defrag 2 times: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-				}
+			}
 		}
 
 		[Fact]

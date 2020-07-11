@@ -17,10 +17,9 @@ namespace DBTrie
 		public static ulong BigEndianToLongDynamic(this ReadOnlySpan<byte> span)
 		{
 			ulong res = 0;
-			int vl = span.Length;
-			for (int i = 0; i < vl; i++)
+			for (int i = 0; i < Sizes.DefaultPointerLen; i++)
 			{
-				res += (ulong)span[i] << ((vl - 1 - i) * 8);
+				res += (ulong)span[i] << ((Sizes.DefaultPointerLen - 1 - i) * 8);
 			}
 			return res;
 		}
