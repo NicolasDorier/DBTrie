@@ -505,6 +505,20 @@ namespace DBTrie.Tests
 			}
 		}
 
+		//[Fact]
+		//public void CanListTransactionsDBriize()
+		//{
+		//	var eng = new DBriize.DBriizeEngine("Data");
+		//	var tx = eng.GetTransaction();
+		//	tx.ValuesLazyLoadingIsOn = false;
+		//	DateTimeOffset now = DateTimeOffset.UtcNow;
+		//	var a = tx.SelectForwardStartsWith<string,byte[]>("Transactions", "c").ToList();
+		//	logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+		//	now = DateTimeOffset.UtcNow;
+		//	tx.SelectForwardStartsWith<string, byte[]>("Transactions", "c").ToList();
+		//	logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+		//}
+
 		[Fact]
 		public async Task CanListTransactions()
 		{
@@ -523,6 +537,7 @@ namespace DBTrie.Tests
 						await foreach (var row in trie.EnumerateStartsWith(""))
 						{
 							records++;
+							row.Dispose();
 						}
 						logs.WriteLine($"Record count : {records}");
 						logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
