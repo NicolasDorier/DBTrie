@@ -19,13 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Data\10000007">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Data\10004281">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="Data\_DBreezeSchema">
+    <None Update="Data\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -29,12 +29,13 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanDoBasicTrieOperations()
 		{
-			CreateEmptyFile("Empty2", 0);
+			using var t = CreateTester();
+			t.CreateEmptyFile("Empty2", 0);
 			await using var fs = new FileStorage("Empty2");
 			var cache = new CacheStorage(fs, false);
 			var trie = await LTrie.InitTrie(cache);
 			await cache.Flush();
-			trie = await ReloadTrie(trie);
+			trie = await t.ReloadTrie(trie);
 			Assert.Null(await trie.GetValueString(1 + "test" + 1));
 			for (int i = 0; i < 5; i++)
 			{
@@ -51,7 +52,7 @@ namespace DBTrie.Tests
 				Assert.Null(await trie.GetValueString(i + "test" + i));
 			}
 			await cache.Flush();
-			trie = await ReloadTrie(trie);
+			trie = await t.ReloadTrie(trie);
 			for (int i = 0; i < 5; i++)
 			{
 				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
@@ -152,7 +153,8 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanUseCacheFastGet()
 		{
-			CreateEmptyFile("CanUseCacheFastGet", 105);
+			using var t = CreateTester();
+			t.CreateEmptyFile("CanUseCacheFastGet", 105);
 			await using var fs = new FileStorage("CanUseCacheFastGet");
 			var cache = new CacheStorage(fs, true, new CacheSettings() { PageSize = 10 });
 			Assert.False(cache.TryDirectRead(0, 1, out var mem));
@@ -179,7 +181,8 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CacheTests()
 		{
-			CreateEmptyFile("Empty", 1030);
+			using var t = CreateTester();
+			t.CreateEmptyFile("Empty", 1030);
 			await using var fs = new FileStorage("Empty");
 			var cache = new CacheStorage(fs, true, new CacheSettings() { PageSize = 128 });
 			await fs.Write(125, "abcdefgh");
@@ -217,7 +220,8 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanCacheWithLRU()
 		{
-			CreateEmptyFile("CanCacheWithLRU", 100);
+			using var t = CreateTester();
+			t.CreateEmptyFile("CanCacheWithLRU", 100);
 			await using var fs = new FileStorage("CanCacheWithLRU");
 			var cache = new CacheStorage(fs, false, new CacheSettings()
 			{
@@ -286,11 +290,12 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task TestResize()
 		{
-			CreateEmptyFile("EmptyResizable", 0);
+			using var t = CreateTester();
+			t.CreateEmptyFile("EmptyResizable", 0);
 			await using var fs = new FileStorage("EmptyResizable");
 			await TestResizeCore(0, fs);
 
-			CreateEmptyFile("EmptyResizable2", 0);
+			t.CreateEmptyFile("EmptyResizable2", 0);
 			await using var fs2 = new FileStorage("EmptyResizable2");
 			await using var cache = new CacheStorage(fs2, false);
 			await TestResizeCore(0, cache);
@@ -335,33 +340,22 @@ namespace DBTrie.Tests
 			Assert.Equal("hell\0", await store.Read(offset, "hello".Length));
 		}
 
-		private static void CreateEmptyFile(string name, int size)
-		{
-			if (File.Exists(name))
-				File.Create(name).Close();
-			var file = File.Create(name);
-			if (size != 0)
-			{
-				file.Seek(size - 1, SeekOrigin.Begin);
-				file.WriteByte(0);
-			}
-			file.Dispose();
-		}
-
 		[Fact]
 		public async Task GeneralTests()
 		{
 			foreach (bool allowTrieCache in new[] { false, true })
 				foreach (bool cacheStorageLayer in new[] { true, false })
 				{
-					await using var fs = CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
-					var trie = await CreateTrie(fs, allowTrieCache);
+					using var t = CreateTester();
+					await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
+					var trie = await t.CreateTrie(fs, allowTrieCache);
 					var generationNode = await trie.ReadNode();
 					var result = await trie.GetValue("@@@@LastFileNumber");
 					Assert.NotNull(result);
 					Assert.Equal(64, result!.Pointer);
 					Assert.Equal(89, result.ValuePointer);
 					Assert.Equal(8, result.ValueLength);
+					result.Dispose();
 					Assert.Null(await trie.GetValue("notexists"));
 					Assert.Null(await trie.GetValue("@u"));
 					Assert.Equal(4282, trie.RecordCount);
@@ -389,7 +383,7 @@ namespace DBTrie.Tests
 					Assert.Equal(4283, trie.RecordCount);
 
 					// Reloading the tree
-					trie = await ReloadTrie(trie);
+					trie = await t.ReloadTrie(trie);
 
 					// We should get back our created table
 					filename = await schema.GetFileNameOrCreate("NotExists");
@@ -415,7 +409,8 @@ namespace DBTrie.Tests
 					ordered = tables.OrderBy(o => o).ToArray();
 					Assert.True(tables.SequenceEqual(ordered));
 					Assert.Equal(3, tables.Length);
-					Assert.NotNull(await trie.GetValue("@utTestTa"));
+
+					await trie.AssertExists("@utTestTa");
 
 					await AssertMatch(trie, false, "POFwoinfOWu");
 					await AssertMatch(trie, false, "@utTestT");
@@ -452,7 +447,7 @@ namespace DBTrie.Tests
 						Assert.Equal(keys.Length - 1, tables.Length);
 
 						// Reloading
-						trie = await ReloadTrie(trie);
+						trie = await t.ReloadTrie(trie);
 						schema = await Schema.OpenOrInitFromTrie(trie);
 						// Make sure our tables are still here
 						foreach (var k in keys)
@@ -529,10 +524,11 @@ namespace DBTrie.Tests
 				foreach (bool allowTrieCache in new[] { false })
 					foreach (bool cacheStorageLayer in new[] { true })
 					{
+						using var t = CreateTester();
 						logs.WriteLine($"allowTrieCache: {allowTrieCache}");
 						logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
-						await using var fs = CreateFileStorage("10000007", cacheStorageLayer);
-						LTrie trie = await CreateTrie(fs, allowTrieCache);
+						await using var fs = t.CreateFileStorage("10000007", cacheStorageLayer);
+						LTrie trie = await t.CreateTrie(fs, allowTrieCache);
 						trie.ConsistencyCheck = false;
 						DateTimeOffset now = DateTimeOffset.UtcNow;
 						int records = 0;
@@ -586,8 +582,9 @@ namespace DBTrie.Tests
 			foreach (bool allowTrieCache in new[] { false, true })
 				foreach (bool cacheStorageLayer in new[] { true, false })
 				{
-					await using var fs = CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
-					LTrie trie = await CreateTrie(fs, allowTrieCache);
+					using var t = CreateTester();
+					await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
+					LTrie trie = await t.CreateTrie(fs, allowTrieCache);
 					var countBefore = trie.RecordCount;
 					Assert.Null(await trie.GetValue("CanSetKeyValue"));
 					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r1");
@@ -596,7 +593,7 @@ namespace DBTrie.Tests
 					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r2");
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 					Assert.Equal(countBefore + 1, trie.RecordCount);
-					trie = await ReloadTrie(trie);
+					trie = await t.ReloadTrie(trie);
 					Assert.Equal(countBefore + 1, trie.RecordCount);
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
 
@@ -610,7 +607,7 @@ namespace DBTrie.Tests
 					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 					Assert.Equal(countBefore + 3, trie.RecordCount);
 
-					trie = await ReloadTrie(trie);
+					trie = await t.ReloadTrie(trie);
 					Assert.Equal("a", await trie.GetValueString("Relocation"));
 					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
@@ -635,7 +632,7 @@ namespace DBTrie.Tests
 					Assert.Equal("a", await trie.GetValueString("Relocation"));
 					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 
-					trie = await ReloadTrie(trie);
+					trie = await t.ReloadTrie(trie);
 
 					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
 					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
@@ -689,6 +686,7 @@ namespace DBTrie.Tests
 							var all = await trie.EnumerateStartsWith(fromShortest[f]).ToArrayAsync();
 							Assert.Equal(keys.Length - f, all.Length);
 							Assert.Equal(all.Length, all.Distinct().Count());
+							all.DisposeAll();
 						}
 					}
 					countBefore = trie.RecordCount;
@@ -763,7 +761,7 @@ namespace DBTrie.Tests
 					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
 
 					// Reload the trie
-					trie = await ReloadTrie(trie);
+					trie = await t.ReloadTrie(trie);
 
 					// Try to defrag, for sports
 					var saved = await trie.Defragment();
@@ -803,6 +801,11 @@ namespace DBTrie.Tests
 				}
 		}
 
+		private Tester CreateTester()
+		{
+			return new Tester();
+		}
+
 		[Fact]
 		public async Task CanSetLotsOfKeysSaturatingNodes()
 		{
@@ -822,7 +825,7 @@ namespace DBTrie.Tests
 				for (int i = 0; i < allBytes.Length; i++)
 				{
 					var row = await test.Get(new byte[] { (byte)i });
-					using(row)
+					using (row)
 					{
 						Assert.NotNull(row);
 						Assert.Equal(1, row!.ValueLength);
@@ -995,22 +998,6 @@ namespace DBTrie.Tests
 			}
 		}
 
-		private static async ValueTask<LTrie> ReloadTrie(LTrie trie)
-		{
-			var trie2 = await CreateTrie(trie.Storage, trie.NodeCache is { });
-			trie2.ConsistencyCheck = trie.ConsistencyCheck;
-			return trie2;
-		}
-
-		private static async ValueTask<LTrie> CreateTrie(IStorage fs, bool allowGenerationNodeCache)
-		{
-			var trie = await LTrie.OpenFromStorage(fs);
-			trie.ConsistencyCheck = true;
-			if (allowGenerationNodeCache)
-				trie.ActivateCache();
-			return trie;
-		}
-
 		private async Task AssertMatch(LTrie trie, bool linkToValue, string search)
 		{
 			var result = await trie.FindBestMatch(Encoding.UTF8.GetBytes(search));
@@ -1026,16 +1013,6 @@ namespace DBTrie.Tests
 				.ToArray());
 		}
 
-		private IStorage CreateFileStorage(string file, bool cacheStorageLayer, [CallerMemberName] string? caller = null)
-		{
-			if (caller is null)
-				throw new ArgumentNullException(nameof(caller));
-			Directory.CreateDirectory(caller);
-			File.Copy($"Data/{file}", $"{caller}/{file}", true);
-			var fs = new FileStorage($"{caller}/{file}");
-			if (!cacheStorageLayer)
-				return fs;
-			return new CacheStorage(fs);
-		}
+
 	}
 }

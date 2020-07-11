@@ -44,7 +44,7 @@ namespace DBTrie
 		public async ValueTask<bool> TableExists(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.GetValue(owner.Memory);
+			using var key = await Trie.GetValue(owner.Memory);
 			return key is LTrieValue;
 		}
 
@@ -67,7 +67,7 @@ namespace DBTrie
 		public async ValueTask<ulong> GetFileNameOrCreate(string tableName)
 		{
 			using var owner = GetTableNameBytes(tableName);
-			var key = await Trie.GetValue(owner.Memory);
+			using var key = await Trie.GetValue(owner.Memory);
 			if (key is null)
 			{
 				var fileNumber = LastFileNumber + 1;
@@ -75,7 +75,7 @@ namespace DBTrie
 				bytes[1] = 1;
 				bytes.AsSpan().Slice(2).ToBigEndian(fileNumber);
 				await Trie.SetValue(owner.Memory, bytes);
-				var row = await Trie.GetValue(LastFileNumberKey);
+				using var row = await Trie.GetValue(LastFileNumberKey);
 				if (row is null)
 					throw new InvalidOperationException("LastFileNumberKey is not found");
 				await Trie.SetValue(LastFileNumberKey, fileNumber);
@@ -103,7 +103,10 @@ namespace DBTrie
 			using var key = this.GetTableNameBytes(startWith);
 			await foreach (var value in Trie.EnumerateStartsWith(key.Memory))
 			{
-				yield return Encoding.UTF8.GetString(value.Key.Span.Slice(3));
+				using (value)
+				{
+					yield return Encoding.UTF8.GetString(value.Key.Span.Slice(3));
+				}
 			}
 		}
 	}
