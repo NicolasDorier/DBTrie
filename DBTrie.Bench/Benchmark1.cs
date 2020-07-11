@@ -12,6 +12,7 @@ namespace DBTrie.Bench
 	[MemoryDiagnoser]
 	public class Benchmark1
 	{
+		ReadOnlyMemory<byte> key;
 		IStorage fs;
 		LTrie trie;
 		Tester t;
@@ -19,6 +20,7 @@ namespace DBTrie.Bench
 		public void Setup()
 		{
 			t = new Tester();
+			key = Encoding.UTF8.GetBytes("cf6c9e8cb9fb312862edbd5c2b7d1615db4f65ab");
 			fs = t.CreateFileStorage("10000007", true, "Benchmark");
 			trie = t.CreateTrie(fs, false).GetAwaiter().GetResult();
 			(trie.EnumerateStartsWith("").ToArrayAsync().GetAwaiter().GetResult()).DisposeAll();
@@ -36,7 +38,12 @@ namespace DBTrie.Bench
 			{
 				row.Dispose();
 			}
-			t.Dispose();
+		}
+
+		[Benchmark]
+		public async Task RandomSearch()
+		{
+			(await trie.GetValue(key)).Dispose();
 		}
 	}
 }
