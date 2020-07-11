@@ -1,4 +1,5 @@
 using DBTrie.Storage;
+using DBTrie.Storage.Cache;
 using DBTrie.TrieModel;
 using NuGet.Frameworks;
 using System;
@@ -224,14 +225,15 @@ namespace DBTrie.Tests
 				MaxPageCount = 2,
 				AutoCommitEvictedPages = false
 			});
-			// If we write on 1 page, all is well.
+			// If we write on page 0.
 			await cache.Write(0, CreateString(5));
 			Assert.Contains(0, cache.pages.Keys);
 			Assert.Single(cache.pages);
+			// We read on page 1
 			await cache.Read(10, 1);
 			Assert.Contains(1, cache.pages.Keys);
 			Assert.Equal(2, cache.pages.Count);
-			// we now write on 3rd page, the second is only read so should be evicted
+			// we now write on page 2, page 1 is only read so should be evicted, even though it is most recently used
 			await cache.Write(20, "a");
 			Assert.DoesNotContain(1, cache.pages.Keys);
 			Assert.Contains(0, cache.pages.Keys);
@@ -250,7 +252,7 @@ namespace DBTrie.Tests
 		[Fact]
 		public void LRUTest()
 		{
-			var lru = new CacheStorage.LRU();
+			var lru = new LRU<long>();
 			lru.Accessed(1);
 			lru.Accessed(2);
 			lru.Accessed(3);
