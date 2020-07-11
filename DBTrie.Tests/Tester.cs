@@ -60,7 +60,8 @@ namespace DBTrie.Tests
 		}
 
 		public int MaxPageCount { get; set; } = Sizes.DefaultPageSize;
-		
+		public bool ConsistencyCheck { get; set; } = true;
+
 		public string TestDataDirectory { get; set; }
 		public IStorage CreateFileStorage(string file, bool cacheStorageLayer, [CallerMemberName] string? caller = null)
 		{
@@ -87,7 +88,7 @@ namespace DBTrie.Tests
 		public async ValueTask<LTrie> CreateTrie(IStorage fs, bool allowGenerationNodeCache)
 		{
 			var trie = await LTrie.OpenFromStorage(fs, pool);
-			trie.ConsistencyCheck = true;
+			trie.ConsistencyCheck = ConsistencyCheck;
 			if (allowGenerationNodeCache)
 				trie.ActivateCache();
 			return trie;

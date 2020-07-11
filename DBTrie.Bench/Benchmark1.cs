@@ -20,6 +20,7 @@ namespace DBTrie.Bench
 		public void Setup()
 		{
 			t = new Tester();
+			t.ConsistencyCheck = false;
 			key = Encoding.UTF8.GetBytes("cf6c9e8cb9fb312862edbd5c2b7d1615db4f65ab");
 			fs = t.CreateFileStorage("10000007", true, "Benchmark");
 			trie = t.CreateTrie(fs, false).GetAwaiter().GetResult();
