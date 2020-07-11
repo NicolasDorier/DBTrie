@@ -31,13 +31,7 @@ namespace DBTrie.TrieModel
 					OwnPointer = OwnPointer + 2
 				};
 			}
-			try
-			{
-				memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
-			}
-			catch 
-			{ 
-			}
+			memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
 			externalLinks = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
 			for (int j = 0; j < memory.Length; j += Sizes.ExternalLinkLength)
 			{
