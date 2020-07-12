@@ -500,6 +500,25 @@ namespace DBTrie.Tests
 				// No burn if double delete
 				await table.Delete();
 			}
+
+			// Can defragment with tight memory requirements (same test as the first one, but with limits)
+			await using (var engine = await CreateEngine())
+			{
+				engine.ConfigurePagePool(new PagePool(1024 * 4, 10));
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				countBefore = (await table.Enumerate().ToArrayAsync()).Length;
+				var trie = await table.GetTrie();
+				var lengthBefore = ((CacheStorage)trie.Storage).Length;
+				Assert.Equal(lengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				var saving = await table.Defragment();
+				Assert.NotEqual(0, saving);
+				Assert.Equal(0, await table.Defragment());
+				trie = await table.GetTrie();
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).Length);
+				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+			}
 		}
 
 		//[Fact]
@@ -935,8 +954,8 @@ namespace DBTrie.Tests
 				using var tx = await engine.OpenTransaction();
 				var table = tx.GetTable("MyTable");
 				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
-				Assert.Equal(Sizes.DefaultPageSize, table.CacheSettings.PageSize);
-				table.LocalCacheSettings = new CacheSettings();
+				Assert.Equal(Sizes.DefaultPageSize, table.PagePool.PageSize);
+				engine.ConfigurePagePool(table.Name, new PagePool());
 				Assert.Equal("eqr", await (await table.Get("qweq"))!.ReadValueString());
 			}
 

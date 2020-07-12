@@ -1,4 +1,5 @@
 ﻿using DBTrie.Storage;
+using DBTrie.Storage.Cache;
 using DBTrie.TrieModel;
 using System;
 using System.Collections;
@@ -36,7 +37,7 @@ namespace DBTrie
 				var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
 				tableFs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
 			}
-			cache = new CacheStorage(tableFs, false, CacheSettings);
+			cache = new CacheStorage(tableFs, false, PagePool, false);
 			return cache;
 		}
 
@@ -171,24 +172,41 @@ namespace DBTrie
 		/// Reclaim unused space
 		/// </summary>
 		/// <returns>The number of bytes saved</returns>
-		public async ValueTask<int> Defragment()
+		public async ValueTask<int> Defragment(CancellationToken cancellationToken = default)
 		{
 			ClearTrie();
-			var oldCacheSettings = _LocalCacheSettings;
+			await ClearFileStream();
+			// We copy the current table on a temporary file, then defragment that
+			// once defragmentation is complete, we copy the temp file to the current table
+			// this prevent corruption if anything happen on the middle of the defragmentation
+			var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
+			var tmpFile = $"{fileName}_tmp";
+			await tx._Engine.Storages.Copy(fileName.ToString(), tmpFile);
+			int saved = 0;
 			try
 			{
-				var temp = CacheSettings.Clone();
-				temp.AutoCommitEvictedPages = true;
-				_LocalCacheSettings = temp;
-				var trie = await GetTrie();
-				var saved = await trie.Defragment();
-				await Commit();
-				return saved;
+				await using var fs = await tx._Engine.Storages.OpenStorage(tmpFile);
+				await using var cache = new CacheStorage(fs, false, PagePool, true);
+				var trie = await LTrie.OpenFromStorage(cache);
+				saved = await trie.Defragment(cancellationToken);
+				await cache.Flush();
+				await fs.Flush();
 			}
-			finally
+			catch
 			{
-				_LocalCacheSettings = oldCacheSettings;
-				ClearTrie();
+				await tx._Engine.Storages.Delete(tmpFile);
+				throw;
+			}
+			await tx._Engine.Storages.Move(tmpFile, fileName.ToString());
+			return saved;
+		}
+
+		private async ValueTask ClearFileStream()
+		{
+			if (tableFs is IStorage)
+			{
+				await tableFs.DisposeAsync();
+				tableFs = null;
 			}
 		}
 
@@ -201,30 +219,27 @@ namespace DBTrie
 			return (await GetTrie()).RecordCount;
 		}
 
-		internal CacheSettings? _LocalCacheSettings;
-		internal CacheSettings? LocalCacheSettings
+		internal PagePool? _LocalPagePool;
+		internal PagePool? LocalPagePool
 		{
 			get
 			{
-				return _LocalCacheSettings;
+				return _LocalPagePool;
 			}
 			set
 			{
 				ClearTrie();
-				_LocalCacheSettings = value;
+				_LocalPagePool = value;
 			}
 		}
 
-		/// <summary>
-		/// The cache settings of this table, can get configured via the <see cref="DBTrieEngine"/>
-		/// </summary>
-		public CacheSettings CacheSettings => _LocalCacheSettings ?? GlobalCacheSettings;
+		internal PagePool PagePool => _LocalPagePool ?? GlobalPagePool;
 
-		internal CacheSettings GlobalCacheSettings
+		internal PagePool GlobalPagePool
 		{
 			get 
 			{
-				return tx._Engine._GlobalCacheSettings;
+				return tx._Engine._GlobalPagePool;
 			}
 		}
 

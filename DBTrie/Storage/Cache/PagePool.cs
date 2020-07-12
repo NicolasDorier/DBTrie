@@ -20,7 +20,7 @@ namespace DBTrie.Storage.Cache
 		internal LRU<Page>? lru;
 		public int PageSize { get; }
 		public int MaxPageCount { get; }
-		public int PageCount { get; private set; }
+		public int PageCount { get; internal set; }
 		internal async ValueTask<Page> NewPage(int pageNumber)
 		{
 			if (lru is LRU<Page>)
@@ -34,23 +34,18 @@ namespace DBTrie.Storage.Cache
 					{
 						if (lru.TryPop(out var leastUsedPage))
 						{
-							bool evict = true;
 							if (leastUsedPage.CanEvict)
 							{
 								if (leastUsedPage.EvictedCallback is Func<Page, ValueTask> evictCallback)
 									await evictCallback(leastUsedPage);
+								noPageToEvict = false;
+								leastUsedPage.Dispose(true);
+								break;
 							}
 							else
 							{
-								evict = false;
 								backToLRU ??= new Stack<Page>();
 								backToLRU.Push(leastUsedPage);
-							}
-							if (evict)
-							{
-								noPageToEvict = false;
-								leastUsedPage.Dispose();
-								break;
 							}
 						}
 					}
@@ -60,7 +55,6 @@ namespace DBTrie.Storage.Cache
 					}
 					if (noPageToEvict)
 						throw new InvalidOperationException("No page available to evict from cache");
-					PageCount--;
 				}
 			}
 			var page = new Page(pageNumber, this);

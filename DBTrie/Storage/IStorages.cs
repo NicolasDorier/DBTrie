@@ -10,5 +10,7 @@ namespace DBTrie.Storage
 		ValueTask<IStorage> OpenStorage(string name);
 		ValueTask<bool> Exists(string name);
 		ValueTask Delete(string name);
+		ValueTask Copy(string src, string dest);
+		ValueTask Move(string src, string dest);
 	}
 }

@@ -16,6 +16,16 @@ namespace DBTrie.Storage
 			this.folderName = folderName;
 		}
 
+		public ValueTask Copy(string src, string dest)
+		{
+			dest = Path.Combine(folderName, dest);
+			src = Path.Combine(folderName, src);
+			if (File.Exists(dest))
+				File.Delete(dest);
+			File.Copy(src, dest);
+			return default;
+		}
+
 		public ValueTask Delete(string name)
 		{
 			var file = Path.Combine(folderName, name);
@@ -29,6 +39,16 @@ namespace DBTrie.Storage
 		public ValueTask<bool> Exists(string name)
 		{
 			return new ValueTask<bool>(File.Exists(Path.Combine(folderName, name)));
+		}
+
+		public ValueTask Move(string src, string dest)
+		{
+			dest = Path.Combine(folderName, dest);
+			src = Path.Combine(folderName, src);
+			if (File.Exists(dest))
+				File.Delete(dest);
+			File.Move(src, dest);
+			return default;
 		}
 
 		public ValueTask<IStorage> OpenStorage(string name)

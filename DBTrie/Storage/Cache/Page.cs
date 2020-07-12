@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace DBTrie.Storage.Cache
 {
-	internal class Page : IDisposable
+	internal class Page
 	{
 		public Page(int pageNumber, PagePool pool)
 		{
@@ -34,13 +34,14 @@ namespace DBTrie.Storage.Cache
 			if (this.pool.lru is LRU<Page> lru)
 				lru.Accessed(this);
 		}
-		public void Dispose()
+		public void Dispose(bool evicted = false)
 		{
 			if (!disposed)
 			{
 				disposed = true;
 				_owner.Dispose();
-				if (this.pool.lru is LRU<Page> lru)
+				this.pool.PageCount--;
+				if (!evicted && this.pool.lru is LRU<Page> lru)
 					lru.Remove(this);
 			}
 		}

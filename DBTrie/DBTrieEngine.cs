@@ -1,4 +1,5 @@
 ﻿using DBTrie.Storage;
+using DBTrie.Storage.Cache;
 using DBTrie.TrieModel;
 using System;
 using System.Collections.Generic;
@@ -34,19 +35,19 @@ namespace DBTrie
 		public IStorages Storages { get; }
 		public Schema Schema { get; }
 
-		public void ConfigureCacheSettings(CacheSettings defaultCacheSettings)
+		public void ConfigurePagePool(PagePool pagePool)
 		{
-			if (defaultCacheSettings == null)
-				throw new ArgumentNullException(nameof(defaultCacheSettings));
-			_GlobalCacheSettings = defaultCacheSettings;
+			if (pagePool == null)
+				throw new ArgumentNullException(nameof(pagePool));
+			_GlobalPagePool = pagePool;
 		}
-		public void ConfigureCacheSettings(string tableName, CacheSettings? cacheSettings)
+		public void ConfigurePagePool(string tableName, PagePool? pagePool)
 		{
 			if (tableName == null)
 				throw new ArgumentNullException(nameof(tableName));
-			_Transaction.GetTable(tableName).LocalCacheSettings = cacheSettings;
+			_Transaction.GetTable(tableName).LocalPagePool = pagePool;
 		}
-		internal CacheSettings _GlobalCacheSettings = new CacheSettings();
+		internal PagePool _GlobalPagePool = new PagePool();
 		/// <summary>
 		/// For debug, check consistency of created trie
 		/// </summary>
