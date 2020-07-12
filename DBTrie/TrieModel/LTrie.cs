@@ -508,32 +508,37 @@ namespace DBTrie.TrieModel
 				if (record is LTrieValue)
 					yield return record;
 			}
-			var nextNodes = new Stack<IEnumerator<Link>>();
-			nextNodes.Push(res.BestNode.ExternalLinks.GetEnumerator());
-			while (nextNodes.TryPop(out var externalLinks))
+			var nextNodes = new Stack<(int Depth, IEnumerator<Link> Links)>();
+
+			(int MinKeyLength, IEnumerator<Link> Links) current = (res.BestNode.MinKeyLength, res.BestNode.ExternalLinks.GetEnumerator());
+			if (!current.Links.MoveNext())
+				current.MinKeyLength = -1;
+			while (current.MinKeyLength > -1 || nextNodes.TryPop(out current))
 			{
-				while (externalLinks.MoveNext())
+				var link = current.Links.Current;
+				if (!link.LinkToNode)
 				{
-					var link = externalLinks.Current;
-					if (!link.LinkToNode)
+					var record = await GetValueIfStartWith(startWithKey, link.Pointer);
+					if (record is LTrieValue)
+						yield return record;
+					if (!current.Links.MoveNext())
+						current.MinKeyLength = -1;
+				}
+				else
+				{
+					var childNode = await ReadNode(link.Pointer, current.MinKeyLength + 1);
+					if (childNode.InternalLink is Link ll)
 					{
-						var record = await GetValueIfStartWith(startWithKey, link.Pointer);
+						var record = await GetValueIfStartWith(startWithKey, ll.Pointer);
 						if (record is LTrieValue)
 							yield return record;
 					}
-					else
-					{
-						var childNode = await ReadNode(link.Pointer, res.BestNode.MinKeyLength + nextNodes.Count + 1);
-						if (childNode.InternalLink is Link ll)
-						{
-							var record = await GetValueIfStartWith(startWithKey, ll.Pointer);
-							if (record is LTrieValue)
-								yield return record;
-						}
-						nextNodes.Push(externalLinks);
-						nextNodes.Push(childNode.ExternalLinks.GetEnumerator());
-						break;
-					}
+					if (current.Links.MoveNext())
+						nextNodes.Push((current.MinKeyLength, current.Links));
+					current.Links = childNode.ExternalLinks.GetEnumerator();
+					current.MinKeyLength++;
+					if (!current.Links.MoveNext())
+						current.MinKeyLength = -1;
 				}
 			}
 		}
