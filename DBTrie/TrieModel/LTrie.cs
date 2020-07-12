@@ -103,19 +103,6 @@ namespace DBTrie.TrieModel
 		}
 
 		public NodeCache? NodeCache { get; private set; }
-
-		internal bool TryReadFastValueKey(long pointer, out ReadOnlyMemory<byte> output, out int keyLength)
-		{
-			keyLength = -1;
-			if (!Storage.TryDirectRead(pointer, 3, out output))
-				return false;
-			var protocol = output.Span[0];
-			keyLength = ((ReadOnlySpan<byte>)output.Span).Slice(1).ReadUInt16BigEndian();
-			var headerSize = protocol == 0 ? 7 : 11;
-			if (!Storage.TryDirectRead(pointer + headerSize, keyLength, out output))
-				return false;
-			return true;
-		}
 		internal async ValueTask<LTrieValue> ReadValue(long pointer)
 		{
 			//1byte - protocol, FullKeyLen (2 bytes), FullValueLen (4 bytes),[Reserved Space For Update- 4 bytes],FullKey,FullValue
@@ -398,13 +385,8 @@ namespace DBTrie.TrieModel
 				}
 				else
 				{
-					IDisposable? owner = null;
-					if (!TryReadFastValueKey(res.ValueLink.Pointer, out var valueKey, out _))
-					{
-						var record = await ReadValue(res.ValueLink.Pointer);
-						owner = record;
-						valueKey = record.Key;
-					}
+					using var record = await ReadValue(res.ValueLink.Pointer);
+					var valueKey = record.Key;
 					// We are replacing a child with the same key
 					if (valueKey.Span.SequenceEqual(key.Span))
 					{
@@ -439,7 +421,6 @@ namespace DBTrie.TrieModel
 						}
 						await gn.AssertConsistency();
 					}
-					owner?.Dispose();
 				}
 			}
 			if (increaseRecord)
@@ -465,22 +446,16 @@ namespace DBTrie.TrieModel
 
 		async ValueTask<LTrieValue?> GetValueIfStartWith(ReadOnlyMemory<byte> startWithKey, long pointer)
 		{
-			if (TryReadFastValueKey(pointer, out var valueKey, out var keyLength))
+			var record = await ReadValue(pointer);
+			if (record.Key.Span.StartsWith(startWithKey.Span))
 			{
-				if (valueKey.Span.StartsWith(startWithKey.Span))
-					return await ReadValue(pointer);
+				return record;
 			}
 			else
 			{
-				if (keyLength != -1 && keyLength < startWithKey.Span.Length)
-					return null;
-				var record = await ReadValue(pointer);
-				if (record.Key.Span.StartsWith(startWithKey.Span))
-					return record;
-				else
-					record.Dispose();
+				record.Dispose();
+				return null;
 			}
-			return null;
 		}
 
 		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
@@ -530,24 +505,13 @@ namespace DBTrie.TrieModel
 			var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return null;
-			if (TryReadFastValueKey(res.ValueLink.Pointer, out var keyValue, out int keyLength))
+			var r = await ReadValue(res.ValueLink.Pointer);
+			if (r.Key.Span.SequenceCompareTo(key.Span) != 0)
 			{
-				if (keyValue.Span.SequenceCompareTo(key.Span) != 0)
-					return null;
-				return await ReadValue(res.ValueLink.Pointer);
+				r.Dispose();
+				return null;
 			}
-			else
-			{
-				if (keyLength != -1 && keyLength != key.Length)
-					return null;
-				var r = await ReadValue(res.ValueLink.Pointer);
-				if (r.Key.Span.SequenceCompareTo(key.Span) != 0)
-				{
-					r.Dispose();
-					return null;
-				}
-				return r;
-			}
+			return r;
 		}
 		public async Task<bool> DeleteRow(string key)
 		{

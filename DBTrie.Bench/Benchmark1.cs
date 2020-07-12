@@ -44,7 +44,7 @@ namespace DBTrie.Bench
 		[Benchmark]
 		public async Task RandomSearch()
 		{
-			(await trie.GetValue(key)).Dispose();
+			(await trie.GetValue(key))?.Dispose();
 		}
 	}
 }
