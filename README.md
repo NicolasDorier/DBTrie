@@ -96,11 +96,32 @@ static async Task Main(string args)
 	{
 		// ....
 		var table = tx.GetTable("MyTable");
-		await table.Defragment()
+		await table.Defragment();
 		// ...
 	}
 }
 ```
+
+### How to limit the memory usage
+
+You can limit the memory usage used by the engine to cache operations:
+
+```csharp
+static async Task Main(string args)
+{
+	Directory.CreateDirectory("Db");
+	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
+	{
+		// ....
+		// The engine will take at most 4 kb * 1000 = 4MB of memory to cache operations.
+		engine.ConfigurePagePool(new PagePool(pageSize: 1024 * 4, maxPageCount: 1000));
+		var table = tx.GetTable("MyTable");
+		// ...
+	}
+}
+```
+
+You should make sure that the memory used by the number of inserts in one commit does not go bigger than this.
 
 ## Best practices
 
@@ -112,8 +133,7 @@ static async Task Main(string args)
 
 ## Todo
 
-* Currently, only a single transaction can be processed at same time. It should be possible to allow concurrent transactions if those do not use the same tables.
-* We cache the underlying file of each table in-memory. We should evict the least used pages to save memory.
+* We cache the underlying file of each table in-memory. If there is no memory left, an error will be thrown. We should instead write the pages on disk in a temporary location.
 
 ## License
 
