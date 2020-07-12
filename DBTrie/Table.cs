@@ -181,6 +181,8 @@ namespace DBTrie
 			// this prevent corruption if anything happen on the middle of the defragmentation
 			var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
 			var tmpFile = $"{fileName}_tmp";
+			if (!await tx._Engine.Storages.Exists(fileName.ToString()))
+				return 0;
 			await tx._Engine.Storages.Copy(fileName.ToString(), tmpFile);
 			int saved = 0;
 			try
