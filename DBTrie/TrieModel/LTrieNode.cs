@@ -10,13 +10,22 @@ using System.Reflection.Emit;
 
 namespace DBTrie.TrieModel
 {
-	internal class LTrieNode
+	internal class LTrieNode : IDisposable
 	{
-		LTrie Trie { get; }
-		public int MinKeyLength { get; }
-		internal LTrieNode(LTrie trie, int minKeyLength, long pointer, ReadOnlyMemory<byte> memory)
+		public LTrie Trie;
+		public int MinKeyLength;
+		SortedList<byte, Link> externalLinks;
+		public Queue<long> FreeSlotPointers;
+
+		internal LTrieNode(LTrie trie)
 		{
 			Trie = trie;
+			externalLinks = new SortedList<byte, Link>();
+			FreeSlotPointers = new Queue<long>();
+		}
+
+		public LTrieNode Read(int minKeyLength, long pointer, ReadOnlyMemory<byte> memory)
+		{
 			MinKeyLength = minKeyLength;
 			OwnPointer = pointer;
 			ushort lineLen = memory.Span.ReadUInt16BigEndian();
@@ -31,8 +40,13 @@ namespace DBTrie.TrieModel
 					OwnPointer = OwnPointer + 2
 				};
 			}
+			else
+			{
+				InternalLink = null;
+			}
 			memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
-			externalLinks = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
+			externalLinks.Clear();
+			FreeSlotPointers.Clear();
 			for (int j = 0; j < memory.Length; j += Sizes.ExternalLinkLength)
 			{
 				var slotPointer = OwnPointer + 2 + Sizes.DefaultPointerLen + j;
@@ -49,15 +63,15 @@ namespace DBTrie.TrieModel
 				l.LinkToNode = memory.Span[j + 1] == 0;
 				externalLinks.Add(i, l);
 			}
+			return this;
 		}
 
-		SortedList<byte, Link> externalLinks;
 		public Link? GetLink(byte value)
 		{
 			externalLinks.TryGetValue(value, out var k);
 			return k;
 		}
-		public Queue<long> FreeSlotPointers { get; } = new Queue<long>();
+		
 
 		public Link UpdateInternalLink(bool linkToNode, long pointer)
 		{
@@ -228,34 +242,6 @@ namespace DBTrie.TrieModel
 			}
 		}
 
-		/// <summary>
-		/// Used by tests to make sure there is no difference
-		/// between storage and in-memory representation
-		/// of the trie
-		/// </summary>
-		/// <returns></returns>
-		internal async ValueTask AssertConsistency()
-		{
-			if (!Trie.ConsistencyCheck)
-				return;
-			var stored = await Trie.ReadNode(OwnPointer, MinKeyLength, false);
-			if (stored.externalLinks.Count != externalLinks.Count)
-				throw new Exception("stored.links.Count != links.Count");
-			if (stored.InternalLink?.Pointer != InternalLink?.Pointer)
-				throw new Exception("stored.InternalLink?.RecordPointer != InternalLink?.RecordPointer");
-			for (int i = 0; i < 256; i++)
-			{
-				var k1 = stored.GetLink((byte)i);
-				var k2 = GetLink((byte)i);
-				if (k1?.OwnPointer != k2?.OwnPointer)
-					throw new Exception("stored?.SlotPointer != this?.SlotPointer");
-				if (k1?.Pointer != k2?.Pointer)
-					throw new Exception("stored?.RecordPointer != this?.RecordPointer");
-				if (k1?.LinkToNode != k2?.LinkToNode)
-					throw new Exception("stored?.LinkToNode != this?.LinkToNode");
-			}
-		}
-
 		private async Task Relocate(int neededSlots)
 		{
 			var newSlotCount = GetSlotReservationCount(neededSlots);
@@ -307,7 +293,6 @@ namespace DBTrie.TrieModel
 			{
 				k.OwnPointer += offset;
 			}
-			Trie.NodeCache?.Relocate(oldPointer, newPointer);
 		}
 
 		public static int GetSlotReservationCount(int kl)
@@ -364,6 +349,11 @@ namespace DBTrie.TrieModel
 			if (lastChild.LinkToNode)
 				return null;
 			return lastChild;
+		}
+
+		public void Dispose()
+		{
+			Trie.NodePool.Free(this);
 		}
 	}
 }

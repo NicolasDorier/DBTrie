@@ -10,7 +10,7 @@ namespace DBTrie.TrieModel
 		{
 			Label = label;
 		}
-		public byte? Label { get; }
+		public byte? Label { get; set; }
 		public long Pointer { get; set; }
 		public long OwnPointer { get; set; }
 		public bool LinkToNode { get; set; } = true;

@@ -343,120 +343,119 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task GeneralTests()
 		{
-			foreach (bool allowTrieCache in new[] { false, true })
-				foreach (bool cacheStorageLayer in new[] { true, false })
+			foreach (bool cacheStorageLayer in new[] { true, false })
+			{
+				using var t = CreateTester();
+				await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
+				var trie = await t.CreateTrie(fs);
+				var generationNode = await trie.ReadNode();
+				var result = await trie.GetValue("@@@@LastFileNumber");
+				Assert.NotNull(result);
+				Assert.Equal(64, result!.Pointer);
+				Assert.Equal(89, result.ValuePointer);
+				Assert.Equal(8, result.ValueLength);
+				result.Dispose();
+				Assert.Null(await trie.GetValue("notexists"));
+				Assert.Null(await trie.GetValue("@u"));
+				Assert.Equal(4282, trie.RecordCount);
+
+				var schema = await Schema.OpenOrInitFromTrie(trie);
+				Assert.True(await schema.TableExists("IndexProgress"));
+				Assert.False(await schema.TableExists("In"));
+				Assert.False(await schema.TableExists("IndexProgresss"));
+				Assert.False(await schema.TableExists("IndexProgres"));
+
+				var filename = await schema.GetFileNameOrCreate("IndexProgress");
+				Assert.Equal(10000006UL, filename);
+				Assert.Equal(10004281UL, schema.LastFileNumber);
+
+				// This should create a new record
+				filename = await schema.GetFileNameOrCreate("NotExists");
+				Assert.Equal(10004282UL, filename);
+				Assert.Equal(10004282UL, schema.LastFileNumber);
+				Assert.Equal(4283, trie.RecordCount);
+
+				// This should NOT create a new record
+				filename = await schema.GetFileNameOrCreate("NotExists");
+				Assert.Equal(10004282UL, filename);
+				Assert.Equal(10004282UL, schema.LastFileNumber);
+				Assert.Equal(4283, trie.RecordCount);
+
+				// Reloading the tree
+				trie = await t.ReloadTrie(trie);
+
+				// We should get back our created table
+				filename = await schema.GetFileNameOrCreate("NotExists");
+				Assert.Equal(10004282UL, filename);
+				Assert.Equal(10004282UL, schema.LastFileNumber);
+				Assert.Equal(4283, trie.RecordCount);
+
+				// Let's make sure this has been persisted as well
+				schema = await Schema.OpenOrInitFromTrie(trie);
+				Assert.Equal(10004282UL, schema.LastFileNumber);
+
+				// Can list tables by name?
+				schema = await Schema.OpenOrInitFromTrie(trie);
+				var tables = await schema.GetTables("TestTa").ToArrayAsync();
+				var ordered = tables.OrderBy(o => o).ToArray();
+				Assert.True(tables.SequenceEqual(ordered));
+				Assert.Equal(4, tables.Length);
+				tables = await schema.GetTables("TestT").ToArrayAsync();
+				ordered = tables.OrderBy(o => o).ToArray();
+				Assert.True(tables.SequenceEqual(ordered));
+				Assert.Equal(4, tables.Length);
+				tables = await schema.GetTables("TestTab").ToArrayAsync();
+				ordered = tables.OrderBy(o => o).ToArray();
+				Assert.True(tables.SequenceEqual(ordered));
+				Assert.Equal(3, tables.Length);
+
+				await trie.AssertExists("@utTestTa");
+
+				await AssertMatch(trie, false, "POFwoinfOWu");
+				await AssertMatch(trie, false, "@utTestT");
+				await AssertMatch(trie, true, "@utTestTa");
+				await AssertMatch(trie, true, "@utIndexProg");
+				await AssertMatch(trie, true, "@utIndexProgT");
+				await AssertMatch(trie, true, "@utIndexProgressss");
+				await AssertMatch(trie, true, "@utIndexProgresa");
+
+				tables = await schema.GetTables().ToArrayAsync();
+				Assert.Equal(4282, tables.Length);
+				ordered = tables.OrderBy(o => o).ToArray();
+				Assert.True(tables.SequenceEqual(ordered));
+				var r = new Random(0);
+				for (int i = 0; i < 10; i++)
 				{
-					using var t = CreateTester();
-					await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
-					var trie = await t.CreateTrie(fs, allowTrieCache);
-					var generationNode = await trie.ReadNode();
-					var result = await trie.GetValue("@@@@LastFileNumber");
-					Assert.NotNull(result);
-					Assert.Equal(64, result!.Pointer);
-					Assert.Equal(89, result.ValuePointer);
-					Assert.Equal(8, result.ValueLength);
-					result.Dispose();
-					Assert.Null(await trie.GetValue("notexists"));
-					Assert.Null(await trie.GetValue("@u"));
-					Assert.Equal(4282, trie.RecordCount);
+					var keys = new string[3];
+					keys[0] = RandomWord(5, r);
+					keys[1] = keys[0] + RandomWord(1, r);
+					keys[2] = keys[1] + RandomWord(1, r);
+					var fromShortest = keys.ToArray();
+					r.Shuffle(keys);
 
-					var schema = await Schema.OpenOrInitFromTrie(trie);
-					Assert.True(await schema.TableExists("IndexProgress"));
-					Assert.False(await schema.TableExists("In"));
-					Assert.False(await schema.TableExists("IndexProgresss"));
-					Assert.False(await schema.TableExists("IndexProgres"));
+					// Try adding tables with intermediates
+					var recordCountBefore = trie.RecordCount;
+					foreach (var k in keys)
+						await schema.GetFileNameOrCreate(k);
+					tables = await schema.GetTables(fromShortest[0]).ToArrayAsync();
+					ordered = tables.OrderBy(o => o).ToArray();
+					Assert.True(tables.SequenceEqual(ordered));
+					Assert.Equal(keys.Length, tables.Length);
+					Assert.Equal(recordCountBefore + keys.Length, trie.RecordCount);
+					tables = await schema.GetTables(fromShortest[1]).ToArrayAsync();
+					Assert.Equal(keys.Length - 1, tables.Length);
 
-					var filename = await schema.GetFileNameOrCreate("IndexProgress");
-					Assert.Equal(10000006UL, filename);
-					Assert.Equal(10004281UL, schema.LastFileNumber);
-
-					// This should create a new record
-					filename = await schema.GetFileNameOrCreate("NotExists");
-					Assert.Equal(10004282UL, filename);
-					Assert.Equal(10004282UL, schema.LastFileNumber);
-					Assert.Equal(4283, trie.RecordCount);
-
-					// This should NOT create a new record
-					filename = await schema.GetFileNameOrCreate("NotExists");
-					Assert.Equal(10004282UL, filename);
-					Assert.Equal(10004282UL, schema.LastFileNumber);
-					Assert.Equal(4283, trie.RecordCount);
-
-					// Reloading the tree
+					// Reloading
 					trie = await t.ReloadTrie(trie);
-
-					// We should get back our created table
-					filename = await schema.GetFileNameOrCreate("NotExists");
-					Assert.Equal(10004282UL, filename);
-					Assert.Equal(10004282UL, schema.LastFileNumber);
-					Assert.Equal(4283, trie.RecordCount);
-
-					// Let's make sure this has been persisted as well
 					schema = await Schema.OpenOrInitFromTrie(trie);
-					Assert.Equal(10004282UL, schema.LastFileNumber);
-
-					// Can list tables by name?
-					schema = await Schema.OpenOrInitFromTrie(trie);
-					var tables = await schema.GetTables("TestTa").ToArrayAsync();
-					var ordered = tables.OrderBy(o => o).ToArray();
-					Assert.True(tables.SequenceEqual(ordered));
-					Assert.Equal(4, tables.Length);
-					tables = await schema.GetTables("TestT").ToArrayAsync();
-					ordered = tables.OrderBy(o => o).ToArray();
-					Assert.True(tables.SequenceEqual(ordered));
-					Assert.Equal(4, tables.Length);
-					tables = await schema.GetTables("TestTab").ToArrayAsync();
-					ordered = tables.OrderBy(o => o).ToArray();
-					Assert.True(tables.SequenceEqual(ordered));
-					Assert.Equal(3, tables.Length);
-
-					await trie.AssertExists("@utTestTa");
-
-					await AssertMatch(trie, false, "POFwoinfOWu");
-					await AssertMatch(trie, false, "@utTestT");
-					await AssertMatch(trie, true, "@utTestTa");
-					await AssertMatch(trie, true, "@utIndexProg");
-					await AssertMatch(trie, true, "@utIndexProgT");
-					await AssertMatch(trie, true, "@utIndexProgressss");
-					await AssertMatch(trie, true, "@utIndexProgresa");
-
-					tables = await schema.GetTables().ToArrayAsync();
-					Assert.Equal(4282, tables.Length);
-					ordered = tables.OrderBy(o => o).ToArray();
-					Assert.True(tables.SequenceEqual(ordered));
-					var r = new Random(0);
-					for (int i = 0; i < 10; i++)
-					{
-						var keys = new string[3];
-						keys[0] = RandomWord(5, r);
-						keys[1] = keys[0] + RandomWord(1, r);
-						keys[2] = keys[1] + RandomWord(1, r);
-						var fromShortest = keys.ToArray();
-						r.Shuffle(keys);
-
-						// Try adding tables with intermediates
-						var recordCountBefore = trie.RecordCount;
-						foreach (var k in keys)
-							await schema.GetFileNameOrCreate(k);
-						tables = await schema.GetTables(fromShortest[0]).ToArrayAsync();
-						ordered = tables.OrderBy(o => o).ToArray();
-						Assert.True(tables.SequenceEqual(ordered));
-						Assert.Equal(keys.Length, tables.Length);
-						Assert.Equal(recordCountBefore + keys.Length, trie.RecordCount);
-						tables = await schema.GetTables(fromShortest[1]).ToArrayAsync();
-						Assert.Equal(keys.Length - 1, tables.Length);
-
-						// Reloading
-						trie = await t.ReloadTrie(trie);
-						schema = await Schema.OpenOrInitFromTrie(trie);
-						// Make sure our tables are still here
-						foreach (var k in keys)
-							Assert.True(await schema.TableExists(k));
-						tables = await schema.GetTables(fromShortest[0]).ToArrayAsync();
-						Assert.Equal(keys.Length, tables.Length);
-						Assert.Equal(recordCountBefore + keys.Length, trie.RecordCount);
-					}
+					// Make sure our tables are still here
+					foreach (var k in keys)
+						Assert.True(await schema.TableExists(k));
+					tables = await schema.GetTables(fromShortest[0]).ToArrayAsync();
+					Assert.Equal(keys.Length, tables.Length);
+					Assert.Equal(recordCountBefore + keys.Length, trie.RecordCount);
 				}
+			}
 		}
 
 		[Fact]
@@ -521,134 +520,131 @@ namespace DBTrie.Tests
 		{
 			for (int i = 0; i < 1; i++)
 			{
-				foreach (bool allowTrieCache in new[] { false })
-					foreach (bool cacheStorageLayer in new[] { true })
+				foreach (bool cacheStorageLayer in new[] { true })
+				{
+					using var t = CreateTester();
+					logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
+					await using var fs = t.CreateFileStorage("10000007", cacheStorageLayer);
+					LTrie trie = await t.CreateTrie(fs);
+					trie.ConsistencyCheck = false;
+					DateTimeOffset now = DateTimeOffset.UtcNow;
+					int records = 0;
+					await foreach (var row in trie.EnumerateStartsWith(""))
 					{
-						using var t = CreateTester();
-						logs.WriteLine($"allowTrieCache: {allowTrieCache}");
-						logs.WriteLine($"cacheStorageLayer: {cacheStorageLayer}");
-						await using var fs = t.CreateFileStorage("10000007", cacheStorageLayer);
-						LTrie trie = await t.CreateTrie(fs, allowTrieCache);
-						trie.ConsistencyCheck = false;
-						DateTimeOffset now = DateTimeOffset.UtcNow;
-						int records = 0;
-						await foreach (var row in trie.EnumerateStartsWith(""))
-						{
-							records++;
-							row.Dispose();
-						}
-						logs.WriteLine($"Record count : {records}");
-						logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-						now = DateTimeOffset.UtcNow;
-						await foreach (var row in trie.EnumerateStartsWith(""))
-						{
-							row.Dispose();
-						}
-						logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-						now = DateTimeOffset.UtcNow;
-						await foreach (var row in trie.EnumerateStartsWith(""))
-						{
-							using var owner = trie.MemoryPool.Rent(row.ValueLength);
-							await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
-							row.Dispose();
-						}
-						logs.WriteLine($"Enumerate values : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-
-						//logs.WriteLine($"Defrag saved {await trie.Defragment()} bytes");
-						//await trie.Storage.Flush();
-						//trie = await ReloadTrie(trie);
-						//if (trie.Storage is CacheStorage c)
-						//	c.Clear(false);
-						//now = DateTimeOffset.UtcNow;
-						//await foreach (var row in trie.EnumerateStartsWith(""))
-						//{
-						//	row.Dispose();
-						//}
-						//logs.WriteLine($"Enumerate values after defrag: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
-
-						//now = DateTimeOffset.UtcNow;
-						//await foreach (var row in trie.EnumerateStartsWith(""))
-						//{
-						//	row.Dispose();
-						//}
-						//logs.WriteLine($"Enumerate values after defrag 2 times: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+						records++;
+						row.Dispose();
 					}
+					logs.WriteLine($"Record count : {records}");
+					logs.WriteLine($"Enumerate 1 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+					now = DateTimeOffset.UtcNow;
+					await foreach (var row in trie.EnumerateStartsWith(""))
+					{
+						row.Dispose();
+					}
+					logs.WriteLine($"Enumerate 2 time : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+					now = DateTimeOffset.UtcNow;
+					await foreach (var row in trie.EnumerateStartsWith(""))
+					{
+						using var owner = trie.MemoryPool.Rent(row.ValueLength);
+						await trie.Storage.Read(row.ValuePointer, owner.Memory.Slice(row.ValueLength));
+						row.Dispose();
+					}
+					logs.WriteLine($"Enumerate values : {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+
+					//logs.WriteLine($"Defrag saved {await trie.Defragment()} bytes");
+					//await trie.Storage.Flush();
+					//trie = await ReloadTrie(trie);
+					//if (trie.Storage is CacheStorage c)
+					//	c.Clear(false);
+					//now = DateTimeOffset.UtcNow;
+					//await foreach (var row in trie.EnumerateStartsWith(""))
+					//{
+					//	row.Dispose();
+					//}
+					//logs.WriteLine($"Enumerate values after defrag: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+
+					//now = DateTimeOffset.UtcNow;
+					//await foreach (var row in trie.EnumerateStartsWith(""))
+					//{
+					//	row.Dispose();
+					//}
+					//logs.WriteLine($"Enumerate values after defrag 2 times: {(int)(DateTimeOffset.UtcNow - now).TotalMilliseconds} ms");
+				}
 			}
 		}
 
 		[Fact]
 		public async Task CanSetKeyValue()
 		{
-			foreach (bool allowTrieCache in new[] { false, true })
-				foreach (bool cacheStorageLayer in new[] { true, false })
+			foreach (bool cacheStorageLayer in new[] { true, false })
+			{
+				using var t = CreateTester();
+				await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
+				LTrie trie = await t.CreateTrie(fs);
+				var countBefore = trie.RecordCount;
+				Assert.Null(await trie.GetValue("CanSetKeyValue"));
+				await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r1");
+				Assert.Equal("CanSetKeyValue-r1", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal(countBefore + 1, trie.RecordCount);
+				await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r2");
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal(countBefore + 1, trie.RecordCount);
+				trie = await t.ReloadTrie(trie);
+				Assert.Equal(countBefore + 1, trie.RecordCount);
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+
+				Assert.Null(await trie.GetValue("Relocation"));
+				await trie.SetKey("Relocation", "a");
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal(countBefore + 2, trie.RecordCount);
+
+				Assert.Null(await trie.GetValue("NoRelocation"));
+				await trie.SetKey("NoRelocation", "b");
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+				Assert.Equal(countBefore + 3, trie.RecordCount);
+
+				trie = await t.ReloadTrie(trie);
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal(countBefore + 3, trie.RecordCount);
+
+				Assert.Null(await trie.GetValue("k"));
+				await trie.SetKey("k", "k-r1");
+				Assert.Equal("k-r1", await trie.GetValueString("k"));
+				await trie.SetKey("k", "k-r2");
+				Assert.Equal("k-r2", await trie.GetValueString("k"));
+				Assert.Equal(countBefore + 4, trie.RecordCount);
+
+				Assert.Null(await trie.GetValue("CanSetKeyValue-Extended"));
+				await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r1");
+				Assert.Equal("CanSetKeyValue-Extended-r1", await trie.GetValueString("CanSetKeyValue-Extended"));
+				await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r2");
+				Assert.Equal(countBefore + 5, trie.RecordCount);
+
+				Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal("k-r2", await trie.GetValueString("k"));
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+
+				trie = await t.ReloadTrie(trie);
+
+				Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal("k-r2", await trie.GetValueString("k"));
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+				Assert.Equal(countBefore + 5, trie.RecordCount);
+
+				List<string> insertedKeys = new List<string>();
+				Random r = new Random(0);
+				for (int i = 0; i < 100; i++)
 				{
-					using var t = CreateTester();
-					await using var fs = t.CreateFileStorage("_DBreezeSchema", cacheStorageLayer);
-					LTrie trie = await t.CreateTrie(fs, allowTrieCache);
-					var countBefore = trie.RecordCount;
-					Assert.Null(await trie.GetValue("CanSetKeyValue"));
-					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r1");
-					Assert.Equal("CanSetKeyValue-r1", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal(countBefore + 1, trie.RecordCount);
-					await trie.SetKey("CanSetKeyValue", "CanSetKeyValue-r2");
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal(countBefore + 1, trie.RecordCount);
-					trie = await t.ReloadTrie(trie);
-					Assert.Equal(countBefore + 1, trie.RecordCount);
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-
-					Assert.Null(await trie.GetValue("Relocation"));
-					await trie.SetKey("Relocation", "a");
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal(countBefore + 2, trie.RecordCount);
-
-					Assert.Null(await trie.GetValue("NoRelocation"));
-					await trie.SetKey("NoRelocation", "b");
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-					Assert.Equal(countBefore + 3, trie.RecordCount);
-
-					trie = await t.ReloadTrie(trie);
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal(countBefore + 3, trie.RecordCount);
-
-					Assert.Null(await trie.GetValue("k"));
-					await trie.SetKey("k", "k-r1");
-					Assert.Equal("k-r1", await trie.GetValueString("k"));
-					await trie.SetKey("k", "k-r2");
-					Assert.Equal("k-r2", await trie.GetValueString("k"));
-					Assert.Equal(countBefore + 4, trie.RecordCount);
-
-					Assert.Null(await trie.GetValue("CanSetKeyValue-Extended"));
-					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r1");
-					Assert.Equal("CanSetKeyValue-Extended-r1", await trie.GetValueString("CanSetKeyValue-Extended"));
-					await trie.SetKey("CanSetKeyValue-Extended", "CanSetKeyValue-Extended-r2");
-					Assert.Equal(countBefore + 5, trie.RecordCount);
-
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValueString("k"));
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-
-					trie = await t.ReloadTrie(trie);
-
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValueString("k"));
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-					Assert.Equal(countBefore + 5, trie.RecordCount);
-
-					List<string> insertedKeys = new List<string>();
-					Random r = new Random(0);
-					for (int i = 0; i < 100; i++)
-					{
-						countBefore = trie.RecordCount;
-						var keys = new string[5];
-						int o = 0;
-						var startWith = r.PickRandom(new[] {
+					countBefore = trie.RecordCount;
+					var keys = new string[5];
+					int o = 0;
+					var startWith = r.PickRandom(new[] {
 						"@ut",
 						"@",
 						"k",
@@ -660,145 +656,145 @@ namespace DBTrie.Tests
 						"R",
 						"NoRelocation",
 						"" });
-						keys[o++] = startWith + RandomWord(5, r);
-						keys[o++] = keys[o - 2] + RandomWord(1, r);
-						keys[o++] = keys[o - 2] + RandomWord(1, r);
-						keys[o++] = keys[o - 2] + RandomWord(1, r);
-						keys[o++] = keys[o - 2] + RandomWord(1, r);
-						var fromShortest = keys.ToArray();
-						r.Shuffle(keys);
+					keys[o++] = startWith + RandomWord(5, r);
+					keys[o++] = keys[o - 2] + RandomWord(1, r);
+					keys[o++] = keys[o - 2] + RandomWord(1, r);
+					keys[o++] = keys[o - 2] + RandomWord(1, r);
+					keys[o++] = keys[o - 2] + RandomWord(1, r);
+					var fromShortest = keys.ToArray();
+					r.Shuffle(keys);
 
-						foreach (var k in keys)
-						{
-							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-							Assert.True(await trie.SetKey(k, k));
-							Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-							Assert.Equal(k, await trie.GetValueString(k));
-							insertedKeys.Add(k);
-						}
-						foreach (var k in keys)
-						{
-							Assert.Equal(k, await trie.GetValueString(k));
-						}
-						Assert.Equal(countBefore + keys.Length, trie.RecordCount);
-						for (int f = 0; f < fromShortest.Length; f++)
-						{
-							var all = await trie.EnumerateStartsWith(fromShortest[f]).ToArrayAsync();
-							Assert.Equal(keys.Length - f, all.Length);
-							Assert.Equal(all.Length, all.Distinct().Count());
-							all.DisposeAll();
-						}
+					foreach (var k in keys)
+					{
+						Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+						Assert.True(await trie.SetKey(k, k));
+						Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+						Assert.Equal(k, await trie.GetValueString(k));
+						insertedKeys.Add(k);
 					}
-					countBefore = trie.RecordCount;
-					// Everything kept value
-					foreach (var k in insertedKeys)
+					foreach (var k in keys)
 					{
 						Assert.Equal(k, await trie.GetValueString(k));
 					}
-					// Randomly edit stuff
-					HashSet<string> edited = new HashSet<string>();
-					foreach (var k in insertedKeys)
+					Assert.Equal(countBefore + keys.Length, trie.RecordCount);
+					for (int f = 0; f < fromShortest.Length; f++)
 					{
-						if (r.Next() % 2 == 0)
-						{
-							Assert.False(await trie.SetKey(k, k + "-r2"));
-							edited.Add(k);
-						}
+						var all = await trie.EnumerateStartsWith(fromShortest[f]).ToArrayAsync();
+						Assert.Equal(keys.Length - f, all.Length);
+						Assert.Equal(all.Length, all.Distinct().Count());
+						all.DisposeAll();
 					}
-					// Everything kept value
-					foreach (var k in insertedKeys)
+				}
+				countBefore = trie.RecordCount;
+				// Everything kept value
+				foreach (var k in insertedKeys)
+				{
+					Assert.Equal(k, await trie.GetValueString(k));
+				}
+				// Randomly edit stuff
+				HashSet<string> edited = new HashSet<string>();
+				foreach (var k in insertedKeys)
+				{
+					if (r.Next() % 2 == 0)
 					{
-						var expected = edited.Contains(k) ? k + "-r2" : k;
+						Assert.False(await trie.SetKey(k, k + "-r2"));
+						edited.Add(k);
+					}
+				}
+				// Everything kept value
+				foreach (var k in insertedKeys)
+				{
+					var expected = edited.Contains(k) ? k + "-r2" : k;
+					Assert.Equal(expected, await trie.GetValueString(k));
+				}
+
+				// Randomly trucate
+				HashSet<string> truncated = new HashSet<string>();
+				foreach (var k in insertedKeys)
+				{
+					if (r.Next() % 2 == 0)
+					{
+						Assert.False(await trie.SetKey(k, k.GetHashCode().ToString()));
+						truncated.Add(k);
+					}
+				}
+
+				// Randomly delete
+				HashSet<string> deleted = new HashSet<string>();
+				foreach (var k in insertedKeys)
+				{
+					if (r.Next() % 2 == 0)
+					{
+						Assert.True(await trie.DeleteRow(k));
+						//Assert.True(await trie.DeleteRow(k), $"Failed to delete {k}");
+						deleted.Add(k);
+					}
+				}
+
+				// Everything kept value
+				foreach (var k in insertedKeys)
+				{
+					if (deleted.Contains(k))
+					{
+						Assert.Null(await trie.GetValue(k));
+					}
+					else
+					{
+						var expected =
+						truncated.Contains(k) ? k.GetHashCode().ToString() :
+						edited.Contains(k) ? k + "-r2" : k;
 						Assert.Equal(expected, await trie.GetValueString(k));
 					}
-
-					// Randomly trucate
-					HashSet<string> truncated = new HashSet<string>();
-					foreach (var k in insertedKeys)
-					{
-						if (r.Next() % 2 == 0)
-						{
-							Assert.False(await trie.SetKey(k, k.GetHashCode().ToString()));
-							truncated.Add(k);
-						}
-					}
-
-					// Randomly delete
-					HashSet<string> deleted = new HashSet<string>();
-					foreach (var k in insertedKeys)
-					{
-						if (r.Next() % 2 == 0)
-						{
-							Assert.True(await trie.DeleteRow(k));
-							//Assert.True(await trie.DeleteRow(k), $"Failed to delete {k}");
-							deleted.Add(k);
-						}
-					}
-
-					// Everything kept value
-					foreach (var k in insertedKeys)
-					{
-						if (deleted.Contains(k))
-						{
-							Assert.Null(await trie.GetValue(k));
-						}
-						else
-						{
-							var expected =
-							truncated.Contains(k) ? k.GetHashCode().ToString() :
-							edited.Contains(k) ? k + "-r2" : k;
-							Assert.Equal(expected, await trie.GetValueString(k));
-						}
-					}
-
-					countBefore -= deleted.Count;
-					Assert.Equal(countBefore, trie.RecordCount);
-					// Nothing else got edited
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValueString("k"));
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-
-					// Reload the trie
-					trie = await t.ReloadTrie(trie);
-
-					// Try to defrag, for sports
-					var saved = await trie.Defragment();
-					Assert.NotEqual(0, saved);
-					Assert.True(30_000 < saved);
-
-					saved = await trie.Defragment();
-					Assert.Equal(0, saved);
-
-					// Everything kept value
-					foreach (var k in insertedKeys)
-					{
-						if (deleted.Contains(k))
-						{
-							Assert.Null(await trie.GetValue(k));
-						}
-						else
-						{
-							var expected =
-							truncated.Contains(k) ? k.GetHashCode().ToString() :
-							edited.Contains(k) ? k + "-r2" : k;
-							Assert.Equal(expected, await trie.GetValueString(k));
-						}
-					}
-					Assert.Equal(countBefore, trie.RecordCount);
-					// Nothing else got edited
-					Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
-					Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
-					Assert.Equal("k-r2", await trie.GetValueString("k"));
-					Assert.Equal("a", await trie.GetValueString("Relocation"));
-					Assert.Equal("b", await trie.GetValueString("NoRelocation"));
-
-					var longKey = new string(Enumerable.Range(0, 256).Select(o => 'a').ToArray());
-					var longValue = new string(Enumerable.Range(0, 256).Select(o => 'b').ToArray());
-					await trie.SetKey(longKey, longValue);
-					Assert.Equal(longValue, await trie.GetValueString(longKey));
 				}
+
+				countBefore -= deleted.Count;
+				Assert.Equal(countBefore, trie.RecordCount);
+				// Nothing else got edited
+				Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal("k-r2", await trie.GetValueString("k"));
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+
+				// Reload the trie
+				trie = await t.ReloadTrie(trie);
+
+				// Try to defrag, for sports
+				var saved = await trie.Defragment();
+				Assert.NotEqual(0, saved);
+				Assert.True(30_000 < saved);
+
+				saved = await trie.Defragment();
+				Assert.Equal(0, saved);
+
+				// Everything kept value
+				foreach (var k in insertedKeys)
+				{
+					if (deleted.Contains(k))
+					{
+						Assert.Null(await trie.GetValue(k));
+					}
+					else
+					{
+						var expected =
+						truncated.Contains(k) ? k.GetHashCode().ToString() :
+						edited.Contains(k) ? k + "-r2" : k;
+						Assert.Equal(expected, await trie.GetValueString(k));
+					}
+				}
+				Assert.Equal(countBefore, trie.RecordCount);
+				// Nothing else got edited
+				Assert.Equal("CanSetKeyValue-Extended-r2", await trie.GetValueString("CanSetKeyValue-Extended"));
+				Assert.Equal("CanSetKeyValue-r2", await trie.GetValueString("CanSetKeyValue"));
+				Assert.Equal("k-r2", await trie.GetValueString("k"));
+				Assert.Equal("a", await trie.GetValueString("Relocation"));
+				Assert.Equal("b", await trie.GetValueString("NoRelocation"));
+
+				var longKey = new string(Enumerable.Range(0, 256).Select(o => 'a').ToArray());
+				var longValue = new string(Enumerable.Range(0, 256).Select(o => 'b').ToArray());
+				await trie.SetKey(longKey, longValue);
+				Assert.Equal(longValue, await trie.GetValueString(longKey));
+			}
 		}
 
 		private Tester CreateTester()

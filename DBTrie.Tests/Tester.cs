@@ -80,17 +80,15 @@ namespace DBTrie.Tests
 
 		public async ValueTask<LTrie> ReloadTrie(LTrie trie)
 		{
-			var trie2 = await CreateTrie(trie.Storage, trie.NodeCache is { });
+			var trie2 = await CreateTrie(trie.Storage);
 			trie2.ConsistencyCheck = trie.ConsistencyCheck;
 			return trie2;
 		}
 
-		public async ValueTask<LTrie> CreateTrie(IStorage fs, bool allowGenerationNodeCache)
+		public async ValueTask<LTrie> CreateTrie(IStorage fs)
 		{
 			var trie = await LTrie.OpenFromStorage(fs, pool);
 			trie.ConsistencyCheck = ConsistencyCheck;
-			if (allowGenerationNodeCache)
-				trie.ActivateCache();
 			return trie;
 		}
 

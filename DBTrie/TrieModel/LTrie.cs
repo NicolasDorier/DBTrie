@@ -97,13 +97,6 @@ namespace DBTrie.TrieModel
 		public StorageHelper StorageHelper { get; }
 		public bool ConsistencyCheck { get; set; }
 
-		public void ActivateCache()
-		{
-			NodeCache = new NodeCache();
-		}
-
-		public NodeCache? NodeCache { get; private set; }
-
 		internal bool TryReadFastValueKey(long pointer, out ReadOnlyMemory<byte> output, out int keyLength)
 		{
 			keyLength = -1;
@@ -156,7 +149,7 @@ namespace DBTrie.TrieModel
 			{
 				cancellationToken.ThrowIfCancellationRequested();
 				var current = nodesToVisit.Pop();
-				var node = await ReadNode(current.NodePointer, -1, false);
+				using var node = await ReadNode(current.NodePointer, -1, false);
 				var nodeMemory = new UsedMemory()
 				{
 					Pointer = node.OwnPointer,
@@ -198,7 +191,6 @@ namespace DBTrie.TrieModel
 					}
 				}
 			}
-			NodeCache?.Clear();
 			int totalSaved = 0;
 			int nextOffset = Sizes.RootSize;
 			// We have a list of all memory region in use (skipping root)
@@ -261,6 +253,7 @@ namespace DBTrie.TrieModel
 			return owner.Slice(0, bytes);
 		}
 
+		internal ObjectPool<LTrieNode> NodePool;
 		internal LTrie(IStorage storage, long rootPointer, long recordCount, MemoryPool<byte>? memoryPool = null)
 		{
 			if (storage == null)
@@ -271,6 +264,8 @@ namespace DBTrie.TrieModel
 			StorageHelper = new StorageHelper(memoryPool, storage);
 			RootPointer = rootPointer;
 			RecordCount = recordCount;
+			NodePool = new ObjectPool<LTrieNode>(() => new LTrieNode(this), 500);
+			//NodePool = new ObjectPool<Link>(() => new Link(), 500);
 		}
 
 		public long RootPointer { get; private set; }
@@ -298,37 +293,36 @@ namespace DBTrie.TrieModel
 		public async ValueTask<LTrieNode> ReadNode(long pointer, int minKeyLength, bool useCache = true)
 		{
 			LTrieNode? cached = null;
-			NodeCache?.TryGetValue(pointer, out cached);
 			if (cached is LTrieNode && useCache)
 			{
 				if (cached.MinKeyLength != minKeyLength)
 					throw new InvalidOperationException("Inconsistent depth, bug in DBTrie");
 				if (cached.OwnPointer != pointer)
 					throw new InvalidOperationException("Inconsistent pointer in cache, bug in DBTrie");
-				await cached.AssertConsistency();
 				return cached;
 			}
 
 			var node = await FetchNode(pointer, minKeyLength);
-			if (useCache)
-				NodeCache?.Add(pointer, node);
 			return node;
 		}
 
 		private async ValueTask<LTrieNode> FetchNode(long pointer, int minKeyLength)
 		{
 			int lineLength = -1;
+
+			var node = NodePool.Allocate();
+
 			// We try reading directly from the buffer without copy
 			if (Storage.TryDirectRead(pointer, Sizes.NodeMinSize, out var memory))
 			{
 				lineLength = memory.Span.ReadUInt16BigEndian();
 				var nodeSize = 2 + lineLength;
 				if (nodeSize == Sizes.NodeMinSize)
-					return new LTrieNode(this, minKeyLength, pointer, memory);
+					return node.Read(minKeyLength, pointer, memory);
 				if (nodeSize < Sizes.NodeMinSize)
 					throw new FormatException("Invalid node size");
 				if (Storage.TryDirectRead(pointer, nodeSize, out memory))
-					return new LTrieNode(this, minKeyLength, pointer, memory);
+					return node.Read(minKeyLength, pointer, memory);
 			}
 
 			// If that fail, fallback
@@ -342,7 +336,7 @@ namespace DBTrie.TrieModel
 					lineLength = ((ReadOnlySpan<byte>)outputMemory.Span).ReadUInt16BigEndian();
 					outputMemory = outputMemory.Slice(0, 2 + lineLength);
 				}
-				return new LTrieNode(this, minKeyLength, pointer, outputMemory);
+				return node.Read(minKeyLength, pointer, outputMemory);
 			}
 		}
 
@@ -362,7 +356,7 @@ namespace DBTrie.TrieModel
 
 		public async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
-			var res = await FindBestMatch(key);
+			using var res = await FindBestMatch(key);
 			bool increaseRecord = false;
 			if (res.ValueLink is null)
 			{
@@ -377,7 +371,6 @@ namespace DBTrie.TrieModel
 						await this.StorageHelper.WritePointer(incomingLink.OwnPointer + 2, res.BestNode.OwnPointer);
 						// Update in-memory
 						incomingLink.Pointer = res.BestNode.OwnPointer;
-						await parent.AssertConsistency();
 					}
 					else
 					{
@@ -386,7 +379,6 @@ namespace DBTrie.TrieModel
 						RootPointer = res.BestNode.OwnPointer;
 					}
 				}
-				await res.BestNode.AssertConsistency();
 			}
 			else
 			{
@@ -425,7 +417,6 @@ namespace DBTrie.TrieModel
 							var oldPointer = gn.OwnPointer;
 							var link = await gn.SetValueLinkToNode(key.Span[i]);
 							prev = gn;
-							await gn.AssertConsistency();
 							gn = await ReadNode(link.Pointer, prev.MinKeyLength + 1);
 						}
 						increaseRecord = true;
@@ -437,7 +428,6 @@ namespace DBTrie.TrieModel
 						{
 							await gn.SetExternalValue(key.Span[gn.MinKeyLength], key, value);
 						}
-						await gn.AssertConsistency();
 					}
 					owner?.Dispose();
 				}
@@ -485,24 +475,30 @@ namespace DBTrie.TrieModel
 
 		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
 		{
+			// We must not dispose the result directly, or we will end up
+			// diposing BestNode twice.
 			var res = await FindBestMatch(startWithKey);
-
 			// In this case, we don't have an exact match, and no children either
 			if (res.ValueLink is null && res.MissingValue is byte)
+			{
+				res.Dispose();
 				yield break;
+			}
+			res.BestNodeParent?.Dispose();
 			if (res.ValueLink is Link l && l.Label is null)
 			{
 				var record = await GetValueIfStartWith(startWithKey, res.ValueLink.Pointer);
 				if (record is LTrieValue)
 					yield return record;
 			}
-			var nextNodes = new Stack<IEnumerator<Link>>();
-			nextNodes.Push(res.BestNode.ExternalLinks.GetEnumerator());
+			var nextNodes = new Stack<(LTrieNode, IEnumerator<Link>)>();
+			nextNodes.Push((res.BestNode, res.BestNode.ExternalLinks.GetEnumerator()));
 			while (nextNodes.TryPop(out var externalLinks))
 			{
-				while (externalLinks.MoveNext())
+				bool done = true;
+				while (externalLinks.Item2.MoveNext())
 				{
-					var link = externalLinks.Current;
+					var link = externalLinks.Item2.Current;
 					if (!link.LinkToNode)
 					{
 						var record = await GetValueIfStartWith(startWithKey, link.Pointer);
@@ -519,15 +515,18 @@ namespace DBTrie.TrieModel
 								yield return record;
 						}
 						nextNodes.Push(externalLinks);
-						nextNodes.Push(childNode.ExternalLinks.GetEnumerator());
+						nextNodes.Push((childNode, childNode.ExternalLinks.GetEnumerator()));
+						done = false;
 						break;
 					}
 				}
+				if (done)
+					externalLinks.Item1.Dispose();
 			}
 		}
 		public async ValueTask<LTrieValue?> GetValue(ReadOnlyMemory<byte> key)
 		{
-			var res = await FindBestMatch(key);
+			using var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return null;
 			if (TryReadFastValueKey(res.ValueLink.Pointer, out var keyValue, out int keyLength))
@@ -556,7 +555,7 @@ namespace DBTrie.TrieModel
 		}
 		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
 		{
-			var res = await FindBestMatch(key);
+			using var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return false;
 			bool removedValue = false;
@@ -615,17 +614,6 @@ namespace DBTrie.TrieModel
 				await StorageHelper.WriteLong(2 + Sizes.DefaultPointerLen, RecordCount - 1);
 				RecordCount--;
 			}
-			if (removedNode)
-			{
-				NodeCache?.Remove(res.BestNode.OwnPointer);
-				if (res.BestNodeParent is LTrieNode n)
-					await n.AssertConsistency();
-			}
-			if (removedValue)
-			{
-				if (res.BestNode is LTrieNode n)
-					await n.AssertConsistency();
-			}
 			return removedValue;
 		}
 
@@ -659,13 +647,14 @@ namespace DBTrie.TrieModel
 						KeyIndex = i
 					};
 				}
+				prev?.Dispose();
 				prev = gn;
 				gn = await ReadNode(externalLink.Pointer, i + 1);
 			}
 			return new MatchResult(gn.InternalLink, gn, prev);
 		}
 
-		internal class MatchResult
+		internal class MatchResult : IDisposable
 		{
 			public MatchResult(Link? valueLink,
 							   LTrieNode node,
@@ -680,6 +669,12 @@ namespace DBTrie.TrieModel
 			public Link? ValueLink { get; set; }
 			public byte? MissingValue { get; set; }
 			public int KeyIndex { get; internal set; } = -1;
+
+			public void Dispose()
+			{
+				BestNode?.Dispose();
+				BestNodeParent?.Dispose();
+			}
 		}
 	}
 }

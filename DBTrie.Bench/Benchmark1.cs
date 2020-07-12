@@ -23,7 +23,7 @@ namespace DBTrie.Bench
 			t.ConsistencyCheck = false;
 			key = Encoding.UTF8.GetBytes("cf6c9e8cb9fb312862edbd5c2b7d1615db4f65ab");
 			fs = t.CreateFileStorage("10000007", true, "Benchmark");
-			trie = t.CreateTrie(fs, false).GetAwaiter().GetResult();
+			trie = t.CreateTrie(fs).GetAwaiter().GetResult();
 			(trie.EnumerateStartsWith("").ToArrayAsync().GetAwaiter().GetResult()).DisposeAll();
 		}
 		[GlobalCleanup]
@@ -44,7 +44,7 @@ namespace DBTrie.Bench
 		[Benchmark]
 		public async Task RandomSearch()
 		{
-			(await trie.GetValue(key)).Dispose();
+			(await trie.GetValue(key))?.Dispose();
 		}
 	}
 }
