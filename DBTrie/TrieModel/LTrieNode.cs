@@ -19,9 +19,10 @@ namespace DBTrie.TrieModel
 			Trie = trie;
 			MinKeyLength = minKeyLength;
 			OwnPointer = pointer;
-			ushort lineLen = memory.Span.ReadUInt16BigEndian();
-			LineLength = memory.Length - 2;
-			var internalLinkPointer = (long)memory.Span.Slice(2).BigEndianToLongDynamic();
+			var span = memory.Span;
+			ushort lineLen = span.ReadUInt16BigEndian();
+			LineLength = span.Length - 2;
+			var internalLinkPointer = (long)span.Slice(2).BigEndianToLongDynamic();
 			if (internalLinkPointer != 0)
 			{
 				InternalLink = new Link(null)
@@ -31,13 +32,13 @@ namespace DBTrie.TrieModel
 					OwnPointer = OwnPointer + 2
 				};
 			}
-			memory = memory.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
-			externalLinks = new SortedList<byte, Link>(memory.Length / Sizes.ExternalLinkLength);
-			for (int j = 0; j < memory.Length; j += Sizes.ExternalLinkLength)
+			span = span.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
+			externalLinks = new SortedList<byte, Link>(span.Length / Sizes.ExternalLinkLength);
+			for (int j = 0; j < span.Length; j += Sizes.ExternalLinkLength)
 			{
 				var slotPointer = OwnPointer + 2 + Sizes.DefaultPointerLen + j;
-				var i = memory.Span[j];
-				var linkPointer = (long)memory.Span.Slice(j + 2).BigEndianToLongDynamic();
+				var i = span[j];
+				var linkPointer = (long)span.Slice(j + 2).BigEndianToLongDynamic();
 				if (linkPointer == 0 || GetLink(i) is Link)
 				{
 					FreeSlotPointers.Enqueue(slotPointer);
@@ -46,7 +47,7 @@ namespace DBTrie.TrieModel
 				var l = new Link(i);
 				l.Pointer = linkPointer;
 				l.OwnPointer = slotPointer;
-				l.LinkToNode = memory.Span[j + 1] == 0;
+				l.LinkToNode = span[j + 1] == 0;
 				externalLinks.Add(i, l);
 			}
 		}
@@ -57,7 +58,17 @@ namespace DBTrie.TrieModel
 			externalLinks.TryGetValue(value, out var k);
 			return k;
 		}
-		public Queue<long> FreeSlotPointers { get; } = new Queue<long>();
+
+		Queue<long>? _FreeSlotPointers;
+		public Queue<long> FreeSlotPointers
+		{
+			get
+			{
+				if (_FreeSlotPointers is null)
+					_FreeSlotPointers = new Queue<long>();
+				return _FreeSlotPointers;
+			}
+		}
 
 		public Link UpdateInternalLink(bool linkToNode, long pointer)
 		{
