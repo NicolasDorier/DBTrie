@@ -282,6 +282,25 @@ namespace DBTrie.TrieModel
 		{
 			return ReadNode(RootPointer, 0);
 		}
+		public ValueTask<LTrieNodeStruct> ReadNodeStruct()
+		{
+			return ReadNodeStruct(RootPointer);
+		}
+
+		public async ValueTask<LTrieNodeStruct> ReadNodeStruct(long pointer)
+		{
+			// We try reading directly from the buffer without copy
+			if (Storage.TryDirectRead(pointer, Sizes.NodeMinSize, out var memory))
+			{
+				return new LTrieNodeStruct(pointer, memory.Span);
+			}
+
+			// If that fail, fallback
+			using var owner = MemoryPool.Rent(Sizes.NodeMinSize);
+			await Storage.Read(pointer, owner.Memory);
+			return new LTrieNodeStruct(pointer, owner.Memory.Span);
+		}
+
 		public async ValueTask<LTrieNode> ReadNode(long pointer, int minKeyLength, bool useCache = true)
 		{
 			LTrieNode? cached = null;
@@ -299,6 +318,24 @@ namespace DBTrie.TrieModel
 			var node = await FetchNode(pointer, minKeyLength);
 			if (useCache)
 				NodeCache?.Add(pointer, node);
+			return node;
+		}
+
+		private async ValueTask<LTrieNode> ToLTrieNodeObject(LTrieNodeStruct nodeStruct, int minKeyLength)
+		{
+			LTrieNode? cached = null;
+			NodeCache?.TryGetValue(nodeStruct.OwnPointer, out cached);
+			if (cached is LTrieNode)
+			{
+				if (cached.MinKeyLength != minKeyLength)
+					throw new InvalidOperationException("Inconsistent depth, bug in DBTrie");
+				if (cached.OwnPointer != nodeStruct.OwnPointer)
+					throw new InvalidOperationException("Inconsistent pointer in cache, bug in DBTrie");
+				await cached.AssertConsistency();
+				return cached;
+			}
+			var node = await FetchNodeFromStruct(nodeStruct, minKeyLength);
+			NodeCache?.Add(nodeStruct.OwnPointer, node);
 			return node;
 		}
 
@@ -595,38 +632,86 @@ namespace DBTrie.TrieModel
 
 		internal async ValueTask<MatchResult> FindBestMatch(ReadOnlyMemory<byte> key)
 		{
-			LTrieNode gn = await ReadNode();
-			LTrieNode? prev = null;
+			LTrieNodeStruct gn = await ReadNodeStruct();
+			LTrieNodeStruct prev = default;
 			if (key.Length == 0)
 			{
-				if (gn.InternalLink is Link k)
-				{
-					return new MatchResult(k, gn, prev);
-				}
+				return await CreateMatchResult(0, gn.GetInternalLinkObject(), gn, prev);
 			}
-
 			for (int i = 0; i < key.Length; i++)
 			{
-				var externalLink = gn.GetLink(key.Span[i]);
-				if (externalLink is null)
+				LTrieNodeExternalLinkStruct externalLink = default;
+				if (key.Span[i] == gn.FirstExternalLink.Value)
 				{
-					return new MatchResult(null, gn, prev)
+					externalLink = gn.FirstExternalLink;
+				}
+				else if (gn.ExternalLinkSlotCount > 1)
+				{
+					IMemoryOwner<byte>? owner = null;
+					var restLength = gn.GetRestLength();
+					var secondLinkPointer = gn.GetSecondExternalLinkOwnPointer();
+					if (!Storage.TryDirectRead(secondLinkPointer, restLength, out var memory))
 					{
-						MissingValue = key.Span[i],
-						KeyIndex = i
-					};
+						owner = MemoryPool.Rent(restLength);
+						var outputMemory = owner.Memory.Slice(0, restLength);
+						await Storage.Read(secondLinkPointer, outputMemory);
+						memory = outputMemory;
+					}
+					for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+					{
+						var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
+						var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
+						if (l.Pointer != 0 && l.Value == key.Span[i])
+						{
+							externalLink = l;
+							break;
+						}
+					}
+					owner?.Dispose();
+				}
+				if (externalLink.Pointer == 0)
+				{
+					var result = await CreateMatchResult(i, null, gn, prev);
+					result.MissingValue = key.Span[i];
+					result.KeyIndex = i;
+					return result;
 				}
 				if (!externalLink.LinkToNode)
 				{
-					return new MatchResult(externalLink, gn, prev)
-					{
-						KeyIndex = i
-					};
+					var result = await CreateMatchResult(i, externalLink.ToLinkObject(), gn, prev);
+					result.KeyIndex = i;
+					return result;
 				}
 				prev = gn;
-				gn = await ReadNode(externalLink.Pointer, i + 1);
+				gn = await ReadNodeStruct(externalLink.Pointer);
 			}
-			return new MatchResult(gn.InternalLink, gn, prev);
+			return await CreateMatchResult(key.Length, gn.GetInternalLinkObject(), gn, prev);
+		}
+
+		private async ValueTask<MatchResult> CreateMatchResult(int minKeyLength, Link? valueLink, LTrieNodeStruct gn, LTrieNodeStruct prev)
+		{
+			return new MatchResult(valueLink,
+				await ToLTrieNodeObject(gn, minKeyLength),
+				prev.OwnPointer == 0 ? null : await ToLTrieNodeObject(prev, minKeyLength - 1));
+		}
+
+		
+		private async ValueTask<LTrieNode> FetchNodeFromStruct(LTrieNodeStruct nodeStruct, int minKeyLength)
+		{
+			if (nodeStruct.ExternalLinkSlotCount == 1)
+			{
+				return new LTrieNode(this, minKeyLength, nodeStruct);
+			}
+			var restLength = nodeStruct.GetRestLength();
+			var secondLinkPointer = nodeStruct.GetSecondExternalLinkOwnPointer();
+			if (Storage.TryDirectRead(secondLinkPointer, restLength, out var memory))
+			{
+				return new LTrieNode(this, minKeyLength, nodeStruct, memory.Span.Slice(0, restLength));
+			}
+			using var owner = MemoryPool.Rent(restLength);
+			var outputMemory = owner.Memory.Slice(0, restLength);
+			await Storage.Read(secondLinkPointer, outputMemory);
+			return new LTrieNode(this, minKeyLength, nodeStruct, outputMemory.Span);
 		}
 
 		internal class MatchResult

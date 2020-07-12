@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Reflection.Emit;
+using System.Diagnostics;
 
 namespace DBTrie.TrieModel
 {
@@ -14,6 +15,29 @@ namespace DBTrie.TrieModel
 	{
 		LTrie Trie { get; }
 		public int MinKeyLength { get; }
+
+		internal LTrieNode(LTrie trie, int minKeyLength, in LTrieNodeStruct nodeStruct)
+		{
+			Trie = trie;
+			MinKeyLength = minKeyLength;
+			OwnPointer = nodeStruct.OwnPointer;
+			LineLength = Sizes.DefaultPointerLen + (nodeStruct.ExternalLinkSlotCount * Sizes.ExternalLinkLength);
+			externalLinks = new SortedList<byte, Link>(nodeStruct.ExternalLinkSlotCount);
+
+			if (nodeStruct.InternalLinkPointer != 0)
+				InternalLink = nodeStruct.GetInternalLinkObject();
+
+			if (nodeStruct.FirstExternalLink.Pointer == 0)
+				FreeSlotPointers.Enqueue(nodeStruct.FirstExternalLink.OwnPointer);
+			else
+				externalLinks.Add(nodeStruct.FirstExternalLink.Value, nodeStruct.FirstExternalLink.ToLinkObject());
+		}
+		internal LTrieNode(LTrie trie, int minKeyLength, in LTrieNodeStruct nodeStruct, ReadOnlySpan<byte> nextExternalLinks)
+			: this(trie, minKeyLength, nodeStruct)
+		{
+			Debug.Assert(nextExternalLinks.Length == (nodeStruct.ExternalLinkSlotCount - 1) * Sizes.ExternalLinkLength);
+			ReadExternalLinks(nodeStruct.GetSecondExternalLinkOwnPointer(), nextExternalLinks);
+		}
 		internal LTrieNode(LTrie trie, int minKeyLength, long pointer, ReadOnlyMemory<byte> memory)
 		{
 			Trie = trie;
@@ -34,9 +58,14 @@ namespace DBTrie.TrieModel
 			}
 			span = span.Slice(2 + Sizes.DefaultPointerLen, lineLen - Sizes.DefaultPointerLen);
 			externalLinks = new SortedList<byte, Link>(span.Length / Sizes.ExternalLinkLength);
+			ReadExternalLinks(OwnPointer + 2 + Sizes.DefaultPointerLen, span);
+		}
+
+		private void ReadExternalLinks(long firstSlotPointer, ReadOnlySpan<byte> span)
+		{
 			for (int j = 0; j < span.Length; j += Sizes.ExternalLinkLength)
 			{
-				var slotPointer = OwnPointer + 2 + Sizes.DefaultPointerLen + j;
+				var slotPointer = firstSlotPointer + j;
 				var i = span[j];
 				var linkPointer = (long)span.Slice(j + 2).BigEndianToLongDynamic();
 				if (linkPointer == 0 || GetLink(i) is Link)
