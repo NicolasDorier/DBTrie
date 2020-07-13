@@ -484,6 +484,48 @@ namespace DBTrie.Tests
 		}
 
 		[Fact]
+		public async Task OrderTests()
+		{
+			await using (var engine = await CreateEmptyEngine())
+			{
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				await table.Insert("1", "1");
+				await table.Insert("2", "2");
+				await table.Insert("3", "3");
+				await table.Delete("1");
+				await table.Insert("4", "4");
+				var values = await EnumerateKeys(table, EnumerationOrder.Ordered);
+				Assert.True(new string[] { "2", "3", "4" }.SequenceEqual(values));
+				values = await EnumerateKeys(table, EnumerationOrder.Unordered);
+				Assert.True(new string[] { "4", "2", "3" }.SequenceEqual(values));
+				await table.Insert("5", "5");
+				values = await EnumerateKeys(table, EnumerationOrder.Unordered);
+				Assert.True(new string[] { "4", "2", "3", "5" }.SequenceEqual(values));
+				await table.Delete("4");
+				await table.Delete("2");
+				await table.Delete("5");
+				await table.Insert("6", "6");
+				values = await EnumerateKeys(table, EnumerationOrder.Unordered);
+				Assert.True(new string[] { "6", "3" }.SequenceEqual(values));
+				await table.Insert("7", "7");
+				await table.Insert("8", "8");
+				values = await EnumerateKeys(table, EnumerationOrder.Unordered);
+				Assert.True(new string[] { "6", "7", "3", "8" }.SequenceEqual(values));
+				values = await EnumerateKeys(table, EnumerationOrder.Ordered);
+				Assert.True(new string[] { "3", "6", "7", "8" }.SequenceEqual(values));
+			}
+		}
+
+		private static async Task<string[]> EnumerateKeys(Table table, EnumerationOrder order)
+		{
+			var records = await table.Enumerate("", order).ToArrayAsync();
+			var values = records.Select(r => UTF8Encoding.UTF8.GetString(r.Key.Span)).ToArray();
+			records.DisposeAll();
+			return values;
+		}
+
+		[Fact]
 		public async Task CanDefragment()
 		{
 			int countBefore = 0;

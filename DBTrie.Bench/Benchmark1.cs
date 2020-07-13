@@ -33,9 +33,17 @@ namespace DBTrie.Bench
 		}
 
 		[Benchmark]
-		public async Task EnumerateValues()
+		public async Task EnumerateValuesOrdered()
 		{
 			await foreach (var row in trie.EnumerateStartsWith(""))
+			{
+				row.Dispose();
+			}
+		}
+		[Benchmark]
+		public async Task EnumerateValuesUnordered()
+		{
+			await foreach (var row in trie.EnumerateStartsWith("", EnumerationOrder.Unordered))
 			{
 				row.Dispose();
 			}

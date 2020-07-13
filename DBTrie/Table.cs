@@ -119,13 +119,13 @@ namespace DBTrie
 			return await (await GetTrie()).GetValue(key);
 		}
 
-		public IAsyncEnumerable<IRow> Enumerate(string? startsWith = null)
+		public IAsyncEnumerable<IRow> Enumerate(string? startsWith = null, EnumerationOrder order = EnumerationOrder.Ordered)
 		{
-			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith ?? string.Empty));
+			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith ?? string.Empty, order));
 		}
-		public IAsyncEnumerable<IRow> Enumerate(ReadOnlyMemory<byte> startsWith)
+		public IAsyncEnumerable<IRow> Enumerate(ReadOnlyMemory<byte> startsWith, EnumerationOrder order = EnumerationOrder.Ordered)
 		{
-			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith));
+			return new DeferredAsyncEnumerable(GetTrie(), t => t.EnumerateStartsWith(startsWith, order));
 		}
 
 		public async ValueTask Delete()

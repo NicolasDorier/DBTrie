@@ -470,12 +470,16 @@ namespace DBTrie.TrieModel
 			return increaseRecord;
 		}
 
-		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(string startsWith)
+		internal IAsyncEnumerable<LTrieValue> EnumerateStartsWith(string startsWith)
+		{
+			return EnumerateStartsWith(startsWith, EnumerationOrder.Ordered);
+		}
+		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(string startsWith, EnumerationOrder order)
 		{
 			var c = Encoding.UTF8.GetByteCount(startsWith, 0, startsWith.Length);
 			using var owner = MemoryPool.Rent(c);
 			Encoding.UTF8.GetBytes(startsWith, owner.Memory.Span.Slice(0, c));
-			await foreach (var item in EnumerateStartsWith(owner.Memory.Slice(0, c)))
+			await foreach (var item in EnumerateStartsWith(owner.Memory.Slice(0, c), order))
 			{
 				yield return item;
 			}
@@ -494,8 +498,11 @@ namespace DBTrie.TrieModel
 				return null;
 			}
 		}
-
-		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
+		internal IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
+		{
+			return EnumerateStartsWith(startWithKey, EnumerationOrder.Ordered);
+		}
+		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey, EnumerationOrder order)
 		{
 			var res = await FindBestMatch(startWithKey);
 
@@ -521,7 +528,7 @@ namespace DBTrie.TrieModel
 				}
 				else
 				{
-					link = await GetOrderedExternalLink(current.Node, current.NextLinkIndex);
+					link = await GetOrderedExternalLink(current.Node, current.NextLinkIndex, order);
 				}
 				if (link.Pointer == 0)
 				{
@@ -711,8 +718,10 @@ namespace DBTrie.TrieModel
 			owner?.Dispose();
 			return default;
 		}
-		private async ValueTask<LTrieNodeExternalLinkStruct> GetOrderedExternalLink(LTrieNodeStruct gn, int orderedIndex)
+		private async ValueTask<LTrieNodeExternalLinkStruct> GetOrderedExternalLink(LTrieNodeStruct gn, int orderedIndex, EnumerationOrder order)
 		{
+			// We don't have to call this method, we should just pick the first link in this case
+			Debug.Assert(orderedIndex > 0 || (orderedIndex == 0 && gn.ExternalLinkSlotCount > 1));
 			IMemoryOwner<byte>? owner = null;
 			var restLength = gn.GetRestLength();
 			var secondLinkPointer = gn.GetSecondExternalLinkOwnPointer();
@@ -723,20 +732,52 @@ namespace DBTrie.TrieModel
 				await Storage.Read(secondLinkPointer, outputMemory);
 				memory = outputMemory;
 			}
-			var links = new SortedList<byte, LTrieNodeExternalLinkStruct>(gn.ExternalLinkSlotCount);
-			if (gn.FirstExternalLink.Pointer != 0)
-				links.Add(gn.FirstExternalLink.Value, gn.FirstExternalLink);
-			for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+			if (order == EnumerationOrder.Unordered)
 			{
-				var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
-				var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
-				if (l.Pointer != 0)
+				var currentIndex = 0;
+				if (gn.FirstExternalLink.Pointer != 0)
 				{
-					links.Add(l.Value, l);
+					if (currentIndex == orderedIndex)
+					{
+						owner?.Dispose();
+						return gn.FirstExternalLink;
+					}
+					currentIndex++;
 				}
+				for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+				{
+					var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
+					var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
+					if (l.Pointer != 0)
+					{
+						if (currentIndex == orderedIndex)
+						{
+							owner?.Dispose();
+							return l;
+						}
+						currentIndex++;
+					}
+				}
+				owner?.Dispose();
+				return default;
 			}
-			owner?.Dispose();
-			return links.Skip(orderedIndex).Select(c => c.Value).FirstOrDefault();
+			else // order == EnumerationOrder.Ordered
+			{
+				var links = new SortedList<byte, LTrieNodeExternalLinkStruct>(gn.ExternalLinkSlotCount);
+				if (gn.FirstExternalLink.Pointer != 0)
+					links.Add(gn.FirstExternalLink.Value, gn.FirstExternalLink);
+				for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+				{
+					var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
+					var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
+					if (l.Pointer != 0)
+					{
+						links.Add(l.Value, l);
+					}
+				}
+				owner?.Dispose();
+				return links.Skip(orderedIndex).Select(c => c.Value).FirstOrDefault();
+			}
 		}
 
 		private async ValueTask<MatchResult> CreateMatchResult(int minKeyLength, Link? valueLink, LTrieNodeStruct gn, LTrieNodeStruct prev)
