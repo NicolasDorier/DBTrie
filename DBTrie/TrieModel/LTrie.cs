@@ -44,7 +44,7 @@ namespace DBTrie.TrieModel
 			return OpenFromSpan(storage, mem.Span, memoryPool);
 		}
 
-		public async ValueTask<bool> SetKey(string key, string value)
+		public async ValueTask<bool> SetValue(string key, string value)
 		{
 			var keyCount = Encoding.UTF8.GetByteCount(key);
 			var valueCount = Encoding.UTF8.GetByteCount(value);
@@ -386,6 +386,7 @@ namespace DBTrie.TrieModel
 
 		public async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
 		{
+			AssertNotEnumerating();
 			var res = await FindBestMatch(key);
 			bool increaseRecord = false;
 			if (res.ValueLink is null)
@@ -498,68 +499,81 @@ namespace DBTrie.TrieModel
 				return null;
 			}
 		}
+		bool enumerating = false;
+		void AssertNotEnumerating()
+		{
+			if (enumerating)
+				throw new InvalidOperationException("Impossible to do this operation while enumerating");
+		}
 		internal IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey)
 		{
 			return EnumerateStartsWith(startWithKey, EnumerationOrder.Ordered);
 		}
 		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey, EnumerationOrder order)
 		{
-			var res = await FindBestMatch(startWithKey);
-
-			// In this case, we don't have an exact match, and no children either
-			if (res.ValueLink is null && res.MissingValue is byte)
-				yield break;
-			if (res.ValueLink is Link l && l.Label is null)
+			try
 			{
-				var record = await GetValueIfStartWith(startWithKey, res.ValueLink.Pointer);
-				if (record is LTrieValue)
-					yield return record;
-			}
-			var nextNodes = new Stack<(int Depth, LTrieNodeStruct Node, int NextLinkIndex)>();
-
-			(int Depth, LTrieNodeStruct Node, int NextLinkIndex) current = 
-				(res.BestNode.MinKeyLength, await ReadNodeStruct(res.BestNode.OwnPointer), 0);
-			while (current.Depth > -1 || nextNodes.TryPop(out current))
-			{
-				LTrieNodeExternalLinkStruct link = default;
-				if (current.NextLinkIndex == 0 && current.Node.ExternalLinkSlotCount == 1)
+				enumerating = true;
+				var res = await FindBestMatch(startWithKey);
+				// In this case, we don't have an exact match, and no children either
+				if (res.ValueLink is null && res.MissingValue is byte)
+					yield break;
+				if (res.ValueLink is Link l && l.Label is null)
 				{
-					link = current.Node.FirstExternalLink;
-				}
-				else
-				{
-					link = await GetOrderedExternalLink(current.Node, current.NextLinkIndex, order);
-				}
-				if (link.Pointer == 0)
-				{
-					current.Depth = -1;
-					continue;
-				}
-				if (!link.LinkToNode)
-				{
-					var record = await GetValueIfStartWith(startWithKey, link.Pointer);
+					var record = await GetValueIfStartWith(startWithKey, res.ValueLink.Pointer);
 					if (record is LTrieValue)
 						yield return record;
-					current.NextLinkIndex++;
-					if (current.NextLinkIndex >= current.Node.ExternalLinkSlotCount)
-						current.Depth = -1;
 				}
-				else
+				var nextNodes = new Stack<(int Depth, LTrieNodeStruct Node, int NextLinkIndex)>();
+
+				(int Depth, LTrieNodeStruct Node, int NextLinkIndex) current =
+					(res.BestNode.MinKeyLength, await ReadNodeStruct(res.BestNode.OwnPointer), 0);
+				while (current.Depth > -1 || nextNodes.TryPop(out current))
 				{
-					var childNode = await ReadNodeStruct(link.Pointer);
-					if (childNode.InternalLinkPointer != 0)
+					LTrieNodeExternalLinkStruct link = default;
+					if (current.NextLinkIndex == 0 && current.Node.ExternalLinkSlotCount == 1)
 					{
-						var record = await GetValueIfStartWith(startWithKey, childNode.InternalLinkPointer);
+						link = current.Node.FirstExternalLink;
+					}
+					else
+					{
+						link = await GetOrderedExternalLink(current.Node, current.NextLinkIndex, order);
+					}
+					if (link.Pointer == 0)
+					{
+						current.Depth = -1;
+						continue;
+					}
+					if (!link.LinkToNode)
+					{
+						var record = await GetValueIfStartWith(startWithKey, link.Pointer);
 						if (record is LTrieValue)
 							yield return record;
+						current.NextLinkIndex++;
+						if (current.NextLinkIndex >= current.Node.ExternalLinkSlotCount)
+							current.Depth = -1;
 					}
-					current.NextLinkIndex++;
-					if (current.NextLinkIndex < current.Node.ExternalLinkSlotCount)
-						nextNodes.Push((current.Depth, current.Node, current.NextLinkIndex));
-					current = (current.Depth + 1, childNode, 0);
-					if (current.NextLinkIndex >= childNode.ExternalLinkSlotCount)
-						current.Depth = -1;
+					else
+					{
+						var childNode = await ReadNodeStruct(link.Pointer);
+						if (childNode.InternalLinkPointer != 0)
+						{
+							var record = await GetValueIfStartWith(startWithKey, childNode.InternalLinkPointer);
+							if (record is LTrieValue)
+								yield return record;
+						}
+						current.NextLinkIndex++;
+						if (current.NextLinkIndex < current.Node.ExternalLinkSlotCount)
+							nextNodes.Push((current.Depth, current.Node, current.NextLinkIndex));
+						current = (current.Depth + 1, childNode, 0);
+						if (current.NextLinkIndex >= childNode.ExternalLinkSlotCount)
+							current.Depth = -1;
+					}
 				}
+			}
+			finally
+			{
+				enumerating = false;
 			}
 		}
 		public async ValueTask<LTrieValue?> GetValue(ReadOnlyMemory<byte> key)
@@ -582,6 +596,7 @@ namespace DBTrie.TrieModel
 		}
 		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
 		{
+			AssertNotEnumerating();
 			var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return false;

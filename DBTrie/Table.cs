@@ -95,7 +95,7 @@ namespace DBTrie
 				throw new ArgumentNullException(nameof(key));
 			if (value == null)
 				throw new ArgumentNullException(nameof(value));
-			return await (await GetTrie()).SetKey(key, value);
+			return await (await GetTrie()).SetValue(key, value);
 		}
 		public async ValueTask<bool> Insert(string key, ReadOnlyMemory<byte> value)
 		{
