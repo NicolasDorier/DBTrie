@@ -624,7 +624,16 @@ namespace DBTrie.Tests
 				// Can't modify table while iterating on it
 				await Assert.ThrowsAsync<InvalidOperationException>(async () => await trie.SetValue("lol", "lol"));
 				await Assert.ThrowsAsync<InvalidOperationException>(async () => await trie.DeleteRow("lol"));
+				break;
 			}
+			await trie.SetValue("lol", "lol");
+			var enumerable = trie.EnumerateStartsWith("@uttx-", EnumerationOrder.Unordered);
+			await trie.SetValue("lol", "lol");
+			var enumerator = enumerable.GetAsyncEnumerator();
+			await enumerator.MoveNextAsync();
+			await Assert.ThrowsAsync<InvalidOperationException>(async () => await trie.DeleteRow("lol"));
+			await enumerator.DisposeAsync();
+			await trie.DeleteRow("lol");
 		}
 
 		[Fact]
