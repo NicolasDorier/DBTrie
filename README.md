@@ -2,7 +2,7 @@
 
 This project is a complete rewrite of [DBreeze](https://github.com/hhblaze/DBreeze), which is a managed implementation of a key/value store based on [radix tree](https://en.wikipedia.org/wiki/Radix_tree).
 
-The initial DBreeze project, while working well, is barely maintained and were showing performance issues for my use cases.
+The initial DBreeze project, while working well, is barely maintained and was showing performance issues for my use cases.
 
 This library allows you to have a fine tuned control over the memory cache.
 
@@ -157,7 +157,10 @@ You should make sure that the memory used by the number of inserts in one commit
 
 ## Todo
 
-* We cache the underlying file of each table in-memory. If there is no memory left, an error will be thrown. We should instead write the pages on disk in a temporary location.
+We cache the underlying file of each table in-memory. 
+If you limit the memory and no page can be evicted (because all pages have been written to during the on-going transaction), then it will throw an error on insert.
+
+We should one day instead evict written pages on a separate file instead of throwing an error.
 
 ## License
 
