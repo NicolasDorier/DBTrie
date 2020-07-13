@@ -302,7 +302,7 @@ namespace DBTrie
 
 			public ValueTask DisposeAsync()
 			{
-				return InternalEnumerator.DisposeAsync();
+				return internalEnumerator?.DisposeAsync() ?? default;
 			}
 
 			public IAsyncEnumerator<IRow> GetAsyncEnumerator(CancellationToken cancellationToken = default)
