@@ -268,7 +268,9 @@ namespace DBTrie.Tests
 			Assert.Equal(2, cache.pages.Count);
 
 			// We write on the 4rd, but because both the 3rd and the 1st page are written, it should throw
-			await Assert.ThrowsAsync<InvalidOperationException>(async () => await cache.Write(30, "a"));
+			await Assert.ThrowsAsync<NoMorePageAvailableException>(async () => await cache.Write(30, "a"));
+			await cache.Flush();
+			await cache.Write(30, "a");
 		}
 
 		private static string CreateString(int len)

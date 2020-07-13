@@ -227,6 +227,7 @@ namespace DBTrie.Storage
 			await InnerStorage.Write(page.PageNumber * _PagePool.PageSize, page.Content.Slice(page.WrittenStart, page.WrittenLength));
 			page.WrittenStart = 0;
 			page.WrittenLength = 0;
+			page.CanEvict = true;
 		}
 
 		/// <summary>

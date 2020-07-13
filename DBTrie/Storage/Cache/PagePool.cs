@@ -29,7 +29,7 @@ namespace DBTrie.Storage.Cache
 				if (lru.Count == MaxPageCount)
 				{
 					bool noPageToEvict = true;
-					Stack<Page>? backToLRU = null;
+					Queue<Page>? backToLRU = null;
 					while (lru.Count > 0)
 					{
 						if (lru.TryPop(out var leastUsedPage))
@@ -44,17 +44,17 @@ namespace DBTrie.Storage.Cache
 							}
 							else
 							{
-								backToLRU ??= new Stack<Page>();
-								backToLRU.Push(leastUsedPage);
+								backToLRU ??= new Queue<Page>();
+								backToLRU.Enqueue(leastUsedPage);
 							}
 						}
 					}
-					while (backToLRU is Stack<Page> s && s.TryPop(out var dirtyPop))
+					while (backToLRU is Queue<Page> s && s.TryDequeue(out var cantEvict))
 					{
-						lru.Push(dirtyPop);
+						lru.Accessed(cantEvict);
 					}
 					if (noPageToEvict)
-						throw new InvalidOperationException("No page available to evict from cache");
+						throw new NoMorePageAvailableException();
 				}
 			}
 			var page = new Page(pageNumber, this);
