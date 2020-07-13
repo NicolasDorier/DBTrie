@@ -18,7 +18,14 @@ This database is what you need if all you want is:
 
 * An embedded database.
 * Fast Read/Insert with Commit/Rollback capabilities.
+* Point requeries
 * Ordered StartWith queries on the keys.
+
+With a warm cache:
+On our machine, enumerating 7000 record with 300 bytes of payload takes 20ms.
+A missed point query with a key of 64 bytes is 7 us (1000 us = 1ms) or about 140 000 operation per second.
+
+We have a `DBTrie.Bench` project, so you can test on your own workload.
 
 ## How to use
 
