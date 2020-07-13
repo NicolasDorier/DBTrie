@@ -83,6 +83,8 @@ namespace DBTrie
 
 		internal async ValueTask Reserve()
 		{
+			if (cache is null)
+				return;
 			await (await this.GetCacheStorage()).ResizeInner();
 		}
 		public async ValueTask<bool> Insert(string key, string value)

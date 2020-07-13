@@ -24,14 +24,9 @@ namespace DBTrie.TrieModel
 
 		public static async ValueTask<LTrie> OpenOrInitFromStorage(IStorage storage, MemoryPool<byte>? memoryPool = null)
 		{
-			try
-			{
-				return await OpenFromStorage(storage, memoryPool);
-			}
-			catch (FormatException)
-			{
+			if (storage.Length == 0)
 				return await InitTrie(storage, memoryPool);
-			}
+			return await OpenFromStorage(storage, memoryPool);
 		}
 		public static async ValueTask<LTrie> OpenFromStorage(IStorage storage, MemoryPool<byte>? memoryPool = null)
 		{
