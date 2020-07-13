@@ -4,6 +4,22 @@ This project is a complete rewrite of [DBreeze](https://github.com/hhblaze/DBree
 
 The initial DBreeze project, while working well, is barely maintained and were showing performance issues for my use cases.
 
+This library allows you to have a fine tuned control over the memory cache.
+
+By default, DBTrie does not have any limit over what it keep in memory.
+You can use call to `DBEngine.ConfigurePagePool` (described below), to put an upper bound to the memory consumption.
+
+If cache is big enough, the whole database will be in memory, so most query do not result in IO operation.
+If there is not enough cache, the least used pages of your database will be removed from the in memory cache.
+
+We worked hard to keep minimum allocations while have a code easy to read.
+
+This database is what you need if all you want is:
+
+* An embedded database.
+* Fast Read/Insert with Commit/Rollback capabilities.
+* Ordered StartWith queries on the keys.
+
 ## How to use
 
 This is a basic key value store.
@@ -125,6 +141,7 @@ You should make sure that the memory used by the number of inserts in one commit
 
 ## Best practices
 
+* Use small keys. The bigger the key, the more resource consuming are lookups.
 * The API allows the use of `[ReadOnly]Memory<byte>` extensively to limit allocations. If you are writting performance sensitive code, consider using those.
 * Think of disposing the `IRow` you get from a table. This decrease the pressure on the garbage collector.
 * Think of disposing the `Transaction` you get from the engine.
