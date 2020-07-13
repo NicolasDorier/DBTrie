@@ -69,6 +69,7 @@ namespace DBTrie.Storage
 			_PagePool = pagePool;
 			_EvictedCallback = new Func<Page, ValueTask>(EvictPage);
 			Length = inner.Length;
+			_LengthChanged = false;
 		}
 
 		async ValueTask EvictPage(Page p)
@@ -166,6 +167,7 @@ namespace DBTrie.Storage
 					throw new ArgumentOutOfRangeException();
 				if (_Length != value)
 				{
+					_LengthChanged = true;
 					var oldSize = _Length;
 					_Length = value;
 					_LastPage = (int)Math.DivRem((int)value, _PagePool.PageSize, out _LastPageLength);
@@ -207,14 +209,17 @@ namespace DBTrie.Storage
 
 		public int MappedPageCount => pages.Count;
 
+		bool _LengthChanged;
 		public async ValueTask Flush()
 		{
-			await InnerStorage.Resize(Length);
+			if (_LengthChanged)
+				await InnerStorage.Resize(Length);
 			foreach(var page in pages.Where(p => p.Value.Dirty))
 			{
 				await FlushPage(page.Value);
 			}
 			await InnerStorage.Flush();
+			_LengthChanged = false;
 		}
 
 		async ValueTask FlushPage(Page page)

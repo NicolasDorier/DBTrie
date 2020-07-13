@@ -31,48 +31,54 @@ namespace DBTrie.Tests
 		public async Task CanDoBasicTrieOperations()
 		{
 			var r = new Random(0);
-			foreach (var orderInserts in new[] { true, false})
+			foreach (var orderInserts in new[] { true, false })
 			{
-				using var t = CreateTester();
-				t.CreateEmptyFile("Empty2", 0);
-				await using var fs = new FileStorage("Empty2");
-				var cache = new CacheStorage(fs, false);
-				var trie = await LTrie.InitTrie(cache);
-				await cache.Flush();
-				trie = await t.ReloadTrie(trie);
-				Assert.Null(await trie.GetValueString(1 + "test" + 1));
+				foreach (var useCache in new[] { true, false })
+				{
+					using var t = CreateTester();
+					t.CreateEmptyFile("Empty2", 0);
+					await using var fs = new FileStorage("Empty2");
+					var cache = new CacheStorage(fs, false);
+					var trie = await LTrie.InitTrie(useCache ? (IStorage)cache : fs);
+					await cache.Flush();
+					trie = await t.ReloadTrie(trie);
+					Assert.Null(await trie.GetValueString(1 + "test" + 1));
 
-				int[] inserts = new[] { 0, 1, 2, 3, 4 };
-				if (!orderInserts)
-					r.Shuffle(inserts);
-				foreach(var i in inserts)
-				{
-					await trie.SetKey(i + "test" + i, "lol" + i);
-					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
-				}
-				await trie.SetKey("1tes", "lol1tes");
-				for (int i = 0; i < 5; i++)
-				{
-					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
-				}
-				trie = await LTrie.OpenFromStorage(fs);
-				for (int i = 0; i < 5; i++)
-				{
-					Assert.Null(await trie.GetValueString(i + "test" + i));
-				}
-				await cache.Flush();
-				trie = await t.ReloadTrie(trie);
-				for (int i = 0; i < 5; i++)
-				{
-					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
-				}
+					int[] inserts = new[] { 0, 1, 2, 3, 4 };
+					if (!orderInserts)
+						r.Shuffle(inserts);
+					foreach (var i in inserts)
+					{
+						await trie.SetKey(i + "test" + i, "lol" + i);
+						Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+					}
+					await trie.SetKey("1tes", "lol1tes");
+					for (int i = 0; i < 5; i++)
+					{
+						Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+					}
+					trie = await LTrie.OpenFromStorage(fs);
+					for (int i = 0; i < 5; i++)
+					{
+						if (useCache)
+							Assert.Null(await trie.GetValueString(i + "test" + i));
+						else
+							Assert.NotNull(await trie.GetValueString(i + "test" + i));
+					}
+					await cache.Flush();
+					trie = await t.ReloadTrie(trie);
+					for (int i = 0; i < 5; i++)
+					{
+						Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+					}
 
-				var rows = await trie.EnumerateStartsWith("").ToArrayAsync();
-				Assert.Equal(5 + 1, rows.Length);
-				var actualOrder = rows.Select(r => UTF8Encoding.UTF8.GetString(r.Key.Span)).ToList();
-				var ordered = actualOrder.OrderBy(o => o).ToArray();
-				Assert.True(actualOrder.SequenceEqual(ordered));
-				rows.DisposeAll();
+					var rows = await trie.EnumerateStartsWith("").ToArrayAsync();
+					Assert.Equal(5 + 1, rows.Length);
+					var actualOrder = rows.Select(r => UTF8Encoding.UTF8.GetString(r.Key.Span)).ToList();
+					var ordered = actualOrder.OrderBy(o => o).ToArray();
+					Assert.True(actualOrder.SequenceEqual(ordered));
+					rows.DisposeAll();
+				}
 			}
 		}
 
