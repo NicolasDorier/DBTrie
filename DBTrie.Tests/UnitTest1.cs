@@ -585,6 +585,25 @@ namespace DBTrie.Tests
 				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).Length);
 				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
 			}
+
+			// Can unsafedefragment
+			await using (var engine = await CreateEngine())
+			{
+				engine.ConfigurePagePool(new PagePool(1024 * 4, 10));
+				using var tx = await engine.OpenTransaction();
+				var table = tx.GetTable("Transactions");
+				countBefore = (await table.Enumerate().ToArrayAsync()).Length;
+				var trie = await table.GetTrie();
+				var lengthBefore = ((CacheStorage)trie.Storage).Length;
+				Assert.Equal(lengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				var saving = await table.UnsafeDefragment();
+				Assert.NotEqual(0, saving);
+				Assert.Equal(0, await table.UnsafeDefragment());
+				trie = await table.GetTrie();
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).Length);
+				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+			}
 		}
 
 		//[Fact]

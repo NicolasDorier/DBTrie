@@ -182,7 +182,7 @@ namespace DBTrie
 		}
 
 		/// <summary>
-		/// Reclaim unused space
+		/// Reclaim unused space (Copy the table in a temporary file, defragment and replace the original table)
 		/// </summary>
 		/// <returns>The number of bytes saved</returns>
 		public async ValueTask<int> Defragment(CancellationToken cancellationToken = default)
@@ -213,6 +213,26 @@ namespace DBTrie
 				throw;
 			}
 			await tx._Engine.Storages.Move(tmpFile, fileName.ToString());
+			return saved;
+		}
+		/// <summary>
+		/// Reclaim unused space (Directly on the table, stopping the defragmentation can result in permanent corruption)
+		/// </summary>
+		/// <returns>The number of bytes saved</returns>
+		public async ValueTask<int> UnsafeDefragment(CancellationToken cancellationToken = default)
+		{
+			ClearTrie();
+			await ClearFileStream();
+			int saved = 0;
+			var fileName = await tx.Schema.GetFileNameOrCreate(tableName);
+			if (!await tx._Engine.Storages.Exists(fileName.ToString()))
+				return 0;
+			await using var fs = await tx._Engine.Storages.OpenStorage(fileName.ToString());
+			await using var cache = new CacheStorage(fs, false, PagePool, true);
+			var trie = await LTrie.OpenFromStorage(cache);
+			saved = await trie.Defragment(cancellationToken);
+			await cache.Flush();
+			await fs.Flush();
 			return saved;
 		}
 
