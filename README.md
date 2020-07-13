@@ -18,7 +18,7 @@ This database is what you need if all you want is:
 
 * An embedded database.
 * Fast Read/Insert with Commit/Rollback capabilities.
-* Point requeries
+* Point queries
 * Ordered StartWith queries on the keys.
 
 With a warm cache:
