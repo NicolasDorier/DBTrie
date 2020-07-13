@@ -1071,6 +1071,10 @@ namespace DBTrie.Tests
 				await table.Delete();
 				Assert.False(await table.Exists());
 				Assert.Null(await engine.Schema.GetFileName("MyTable"));
+				await table.Close();
+				await Assert.ThrowsAsync<InvalidOperationException>(async () => await table.Insert("", ""));
+				table = tx.GetTable(table.Name);
+				await table.Insert("", "");
 			}
 		}
 

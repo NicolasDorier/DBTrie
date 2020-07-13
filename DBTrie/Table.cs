@@ -47,6 +47,7 @@ namespace DBTrie
 		{
 			if (trie is LTrie)
 				return trie;
+			AssertNotClosed();
 			trie = await LTrie.OpenOrInitFromStorage(await GetCacheStorage());
 			trie.ConsistencyCheck = checkConsistency;
 			return trie;
@@ -75,14 +76,9 @@ namespace DBTrie
 			return await (await this.GetTrie()).DeleteRow(key);
 		}
 
-		internal async ValueTask DisposeAsync()
+		internal ValueTask DisposeAsync()
 		{
-			ClearTrie();
-			if (this.tableFs is FileStorage f)
-			{
-				await f.DisposeAsync();
-				tableFs = null;
-			}
+			return Close();
 		}
 
 		internal async ValueTask Reserve()
@@ -130,21 +126,38 @@ namespace DBTrie
 
 		public async ValueTask Delete()
 		{
-			if (tx._Tables.Remove(tableName))
-			{
-				ClearTrie();
-				if (this.tableFs is FileStorage f)
-				{
-					await f.DisposeAsync();
-					tableFs = null;
-				}
-			}
+			await Close();
 			if (await tx.Schema.GetFileName(tableName) is ulong fileName)
 			{
 				await tx.Schema.RemoveFileName(tableName);
 				await tx.Storages.Delete(fileName.ToString());
 			}
 			await tx.Storages.Delete(tableName);
+		}
+
+		void AssertNotClosed()
+		{
+			if (closed)
+				throw new InvalidOperationException("This table has been closed");
+		}
+
+		bool closed;
+		/// <summary>
+		/// Close the underlying file stream and release the cache data
+		/// </summary>
+		/// <returns></returns>
+		public async ValueTask Close()
+		{
+			if (closed)
+				return;
+			closed = true;
+			tx._Tables.Remove(tableName);
+			ClearTrie();
+			if (this.tableFs is FileStorage f)
+			{
+				await f.DisposeAsync();
+				tableFs = null;
+			}
 		}
 
 		private void ClearTrie()
