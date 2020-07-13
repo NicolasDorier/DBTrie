@@ -508,37 +508,50 @@ namespace DBTrie.TrieModel
 				if (record is LTrieValue)
 					yield return record;
 			}
-			var nextNodes = new Stack<(int Depth, IEnumerator<Link> Links)>();
+			var nextNodes = new Stack<(int Depth, LTrieNodeStruct Node, int NextLinkIndex)>();
 
-			(int MinKeyLength, IEnumerator<Link> Links) current = (res.BestNode.MinKeyLength, res.BestNode.ExternalLinks.GetEnumerator());
-			if (!current.Links.MoveNext())
-				current.MinKeyLength = -1;
-			while (current.MinKeyLength > -1 || nextNodes.TryPop(out current))
+			(int Depth, LTrieNodeStruct Node, int NextLinkIndex) current = 
+				(res.BestNode.MinKeyLength, await ReadNodeStruct(res.BestNode.OwnPointer), 0);
+			while (current.Depth > -1 || nextNodes.TryPop(out current))
 			{
-				var link = current.Links.Current;
+				LTrieNodeExternalLinkStruct link = default;
+				if (current.NextLinkIndex == 0 && current.Node.ExternalLinkSlotCount == 1)
+				{
+					link = current.Node.FirstExternalLink;
+				}
+				else
+				{
+					link = await GetOrderedExternalLink(current.Node, current.NextLinkIndex);
+				}
+				if (link.Pointer == 0)
+				{
+					current.Depth = -1;
+					continue;
+				}
 				if (!link.LinkToNode)
 				{
 					var record = await GetValueIfStartWith(startWithKey, link.Pointer);
 					if (record is LTrieValue)
 						yield return record;
-					if (!current.Links.MoveNext())
-						current.MinKeyLength = -1;
+					current.NextLinkIndex++;
+					if (current.NextLinkIndex >= current.Node.ExternalLinkSlotCount)
+						current.Depth = -1;
 				}
 				else
 				{
-					var childNode = await ReadNode(link.Pointer, current.MinKeyLength + 1);
-					if (childNode.InternalLink is Link ll)
+					var childNode = await ReadNodeStruct(link.Pointer);
+					if (childNode.InternalLinkPointer != 0)
 					{
-						var record = await GetValueIfStartWith(startWithKey, ll.Pointer);
+						var record = await GetValueIfStartWith(startWithKey, childNode.InternalLinkPointer);
 						if (record is LTrieValue)
 							yield return record;
 					}
-					if (current.Links.MoveNext())
-						nextNodes.Push((current.MinKeyLength, current.Links));
-					current.Links = childNode.ExternalLinks.GetEnumerator();
-					current.MinKeyLength++;
-					if (!current.Links.MoveNext())
-						current.MinKeyLength = -1;
+					current.NextLinkIndex++;
+					if (current.NextLinkIndex < current.Node.ExternalLinkSlotCount)
+						nextNodes.Push((current.Depth, current.Node, current.NextLinkIndex));
+					current = (current.Depth + 1, childNode, 0);
+					if (current.NextLinkIndex >= childNode.ExternalLinkSlotCount)
+						current.Depth = -1;
 				}
 			}
 		}
@@ -652,27 +665,7 @@ namespace DBTrie.TrieModel
 				}
 				else if (gn.ExternalLinkSlotCount > 1)
 				{
-					IMemoryOwner<byte>? owner = null;
-					var restLength = gn.GetRestLength();
-					var secondLinkPointer = gn.GetSecondExternalLinkOwnPointer();
-					if (!Storage.TryDirectRead(secondLinkPointer, restLength, out var memory))
-					{
-						owner = MemoryPool.Rent(restLength);
-						var outputMemory = owner.Memory.Slice(0, restLength);
-						await Storage.Read(secondLinkPointer, outputMemory);
-						memory = outputMemory;
-					}
-					for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
-					{
-						var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
-						var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
-						if (l.Pointer != 0 && l.Value == key.Span[i])
-						{
-							externalLink = l;
-							break;
-						}
-					}
-					owner?.Dispose();
+					externalLink = await GetRemainingExternalLink(gn, key.Span[i]);
 				}
 				if (externalLink.Pointer == 0)
 				{
@@ -691,6 +684,59 @@ namespace DBTrie.TrieModel
 				gn = await ReadNodeStruct(externalLink.Pointer);
 			}
 			return await CreateMatchResult(key.Length, gn.GetInternalLinkObject(), gn, prev);
+		}
+
+		private async ValueTask<LTrieNodeExternalLinkStruct> GetRemainingExternalLink(LTrieNodeStruct gn, byte value)
+		{
+			IMemoryOwner<byte>? owner = null;
+			var restLength = gn.GetRestLength();
+			var secondLinkPointer = gn.GetSecondExternalLinkOwnPointer();
+			if (!Storage.TryDirectRead(secondLinkPointer, restLength, out var memory))
+			{
+				owner = MemoryPool.Rent(restLength);
+				var outputMemory = owner.Memory.Slice(0, restLength);
+				await Storage.Read(secondLinkPointer, outputMemory);
+				memory = outputMemory;
+			}
+			for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+			{
+				var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
+				var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
+				if (l.Pointer != 0 && l.Value == value)
+				{
+					owner?.Dispose();
+					return l;
+				}
+			}
+			owner?.Dispose();
+			return default;
+		}
+		private async ValueTask<LTrieNodeExternalLinkStruct> GetOrderedExternalLink(LTrieNodeStruct gn, int orderedIndex)
+		{
+			IMemoryOwner<byte>? owner = null;
+			var restLength = gn.GetRestLength();
+			var secondLinkPointer = gn.GetSecondExternalLinkOwnPointer();
+			if (!Storage.TryDirectRead(secondLinkPointer, restLength, out var memory))
+			{
+				owner = MemoryPool.Rent(restLength);
+				var outputMemory = owner.Memory.Slice(0, restLength);
+				await Storage.Read(secondLinkPointer, outputMemory);
+				memory = outputMemory;
+			}
+			var links = new SortedList<byte, LTrieNodeExternalLinkStruct>(gn.ExternalLinkSlotCount);
+			if (gn.FirstExternalLink.Pointer != 0)
+				links.Add(gn.FirstExternalLink.Value, gn.FirstExternalLink);
+			for (int linkIndex = 0; linkIndex < gn.ExternalLinkSlotCount - 1; linkIndex++)
+			{
+				var linkOwnPointer = secondLinkPointer + linkIndex * Sizes.ExternalLinkLength;
+				var l = new LTrieNodeExternalLinkStruct(linkOwnPointer, memory.Span.Slice(linkIndex * Sizes.ExternalLinkLength, Sizes.ExternalLinkLength));
+				if (l.Pointer != 0)
+				{
+					links.Add(l.Value, l);
+				}
+			}
+			owner?.Dispose();
+			return links.Skip(orderedIndex).Select(c => c.Value).FirstOrDefault();
 		}
 
 		private async ValueTask<MatchResult> CreateMatchResult(int minKeyLength, Link? valueLink, LTrieNodeStruct gn, LTrieNodeStruct prev)

@@ -11,6 +11,7 @@ using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Unicode;
 using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
@@ -29,33 +30,49 @@ namespace DBTrie.Tests
 		[Fact]
 		public async Task CanDoBasicTrieOperations()
 		{
-			using var t = CreateTester();
-			t.CreateEmptyFile("Empty2", 0);
-			await using var fs = new FileStorage("Empty2");
-			var cache = new CacheStorage(fs, false);
-			var trie = await LTrie.InitTrie(cache);
-			await cache.Flush();
-			trie = await t.ReloadTrie(trie);
-			Assert.Null(await trie.GetValueString(1 + "test" + 1));
-			for (int i = 0; i < 5; i++)
+			var r = new Random(0);
+			foreach (var orderInserts in new[] { true, false})
 			{
-				await trie.SetKey(i + "test" + i, "lol" + i);
-				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
-			}
-			for (int i = 0; i < 5; i++)
-			{
-				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
-			}
-			trie = await LTrie.OpenFromStorage(fs);
-			for (int i = 0; i < 5; i++)
-			{
-				Assert.Null(await trie.GetValueString(i + "test" + i));
-			}
-			await cache.Flush();
-			trie = await t.ReloadTrie(trie);
-			for (int i = 0; i < 5; i++)
-			{
-				Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+				using var t = CreateTester();
+				t.CreateEmptyFile("Empty2", 0);
+				await using var fs = new FileStorage("Empty2");
+				var cache = new CacheStorage(fs, false);
+				var trie = await LTrie.InitTrie(cache);
+				await cache.Flush();
+				trie = await t.ReloadTrie(trie);
+				Assert.Null(await trie.GetValueString(1 + "test" + 1));
+
+				int[] inserts = new[] { 0, 1, 2, 3, 4 };
+				if (!orderInserts)
+					r.Shuffle(inserts);
+				foreach(var i in inserts)
+				{
+					await trie.SetKey(i + "test" + i, "lol" + i);
+					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+				}
+				await trie.SetKey("1tes", "lol1tes");
+				for (int i = 0; i < 5; i++)
+				{
+					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+				}
+				trie = await LTrie.OpenFromStorage(fs);
+				for (int i = 0; i < 5; i++)
+				{
+					Assert.Null(await trie.GetValueString(i + "test" + i));
+				}
+				await cache.Flush();
+				trie = await t.ReloadTrie(trie);
+				for (int i = 0; i < 5; i++)
+				{
+					Assert.Equal("lol" + i, await trie.GetValueString(i + "test" + i));
+				}
+
+				var rows = await trie.EnumerateStartsWith("").ToArrayAsync();
+				Assert.Equal(5 + 1, rows.Length);
+				var actualOrder = rows.Select(r => UTF8Encoding.UTF8.GetString(r.Key.Span)).ToList();
+				var ordered = actualOrder.OrderBy(o => o).ToArray();
+				Assert.True(actualOrder.SequenceEqual(ordered));
+				rows.DisposeAll();
 			}
 		}
 
@@ -423,6 +440,7 @@ namespace DBTrie.Tests
 					tables = await schema.GetTables().ToArrayAsync();
 					Assert.Equal(4282, tables.Length);
 					ordered = tables.OrderBy(o => o).ToArray();
+
 					Assert.True(tables.SequenceEqual(ordered));
 					var r = new Random(0);
 					for (int i = 0; i < 10; i++)
