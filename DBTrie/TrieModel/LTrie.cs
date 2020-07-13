@@ -89,6 +89,7 @@ namespace DBTrie.TrieModel
 			WriteRoot(owner.Memory.Span);
 			LTrieNode.WriteNew(owner.Memory.Span.Slice(Sizes.RootSize), 1);
 			await storage.Write(0, owner.Memory.Slice(0, rootAndNodeSize));
+			await storage.Flush();
 			return await OpenFromStorage(storage);
 		}
 
