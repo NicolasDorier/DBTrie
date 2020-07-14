@@ -265,7 +265,7 @@ namespace DBTrie.Tests
 			Assert.Equal(2, cache.pages.Count);
 			Assert.Equal(0, cache.PagePool.FreePageCount);
 			Assert.Equal(1, cache.PagePool.EvictablePageCount);
-			// we now write on page 2, page 1 is only read so should be evicted, even though it is most recently used
+			// we now write on page 2, page 1 is only read so should be evicted, even though it is not the most recently used
 			await cache.Write(20, "a");
 			Assert.DoesNotContain(1, cache.pages.Keys);
 			Assert.Contains(0, cache.pages.Keys);
@@ -293,6 +293,74 @@ namespace DBTrie.Tests
 			Assert.Equal(0, cache.PagePool.PageCount);
 			Assert.Equal(2, cache.PagePool.FreePageCount);
 			Assert.Equal(0, cache.PagePool.EvictablePageCount);
+		}
+		[Fact]
+		public async Task CanCacheWithLRUWithAutoCommit()
+		{
+			using var t = CreateTester();
+			t.CreateEmptyFile("CanCacheWithLRUWithAutoCommit", 100);
+			await using var fs = new FileStorage("CanCacheWithLRUWithAutoCommit");
+			var cache = new CacheStorage(fs, false, new CacheSettings()
+			{
+				PageSize = 10,
+				MaxPageCount = 2,
+				AutoCommitEvictedPages = true
+			});
+			// If we write on page 0.
+			await cache.Write(0, CreateString(5));
+			Assert.Contains(0, cache.pages.Keys);
+			Assert.Single(cache.pages);
+			Assert.Equal(1, cache.PagePool.PageCount);
+			Assert.Equal(1, cache.PagePool.FreePageCount);
+			Assert.Equal(1, cache.PagePool.EvictablePageCount);
+			// We read on page 1
+			await cache.Read(10, 1);
+			Assert.Contains(1, cache.pages.Keys);
+			Assert.Equal(2, cache.pages.Count);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
+			// we now write on page 2, page 0 should be evicted
+			await cache.Write(20, "ab");
+			Assert.DoesNotContain(0, cache.pages.Keys);
+			Assert.Contains(1, cache.pages.Keys);
+			Assert.Contains(2, cache.pages.Keys);
+			Assert.Equal(2, cache.PagePool.PageCount);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
+			// Make sure that writing again or reading, does not remove this page from eviction
+			await cache.Write(20, "ab");
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
+			await cache.Read(20, 2);
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
+			Assert.DoesNotContain(0, cache.pages.Keys);
+			Assert.Contains(1, cache.pages.Keys);
+			Assert.Contains(2, cache.pages.Keys);
+
+			// We write page 3 so 1 should be evicted
+			await cache.Write(30, "a");
+			Assert.Equal(2, cache.PagePool.PageCount);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
+			Assert.DoesNotContain(0, cache.pages.Keys);
+			Assert.DoesNotContain(1, cache.pages.Keys);
+			Assert.Contains(2, cache.pages.Keys);
+			Assert.Contains(3, cache.pages.Keys);
+
+			// We write page 4 so 2 should be evicted
+			await cache.Write(40, "a");
+			Assert.DoesNotContain(0, cache.pages.Keys);
+			Assert.DoesNotContain(1, cache.pages.Keys);
+			Assert.DoesNotContain(2, cache.pages.Keys);
+			Assert.Contains(3, cache.pages.Keys);
+			Assert.Contains(4, cache.pages.Keys);
+
+			// But should have been committed, should evict 3
+			Assert.Equal("ab", await cache.Read(20, 2));
+			Assert.DoesNotContain(0, cache.pages.Keys);
+			Assert.DoesNotContain(1, cache.pages.Keys);
+			Assert.DoesNotContain(3, cache.pages.Keys);
+			Assert.Contains(2, cache.pages.Keys);
+			Assert.Contains(4, cache.pages.Keys);
 		}
 
 		private static string CreateString(int len)
