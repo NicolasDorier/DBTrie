@@ -273,6 +273,11 @@ namespace DBTrie.Tests
 			Assert.Equal(2, cache.PagePool.PageCount);
 			Assert.Equal(0, cache.PagePool.FreePageCount);
 			Assert.Equal(0, cache.PagePool.EvictablePageCount);
+			// Make sure that writing again or reading, does not put this page back into evictable
+			await cache.Write(20, "aa");
+			Assert.Equal(0, cache.PagePool.EvictablePageCount);
+			await cache.Read(20, 2);
+			Assert.Equal(0, cache.PagePool.EvictablePageCount);
 
 			// We write on the 4rd, but because both the 3rd and the 1st page are written, it should throw
 			await Assert.ThrowsAsync<NoMorePageAvailableException>(async () => await cache.Write(30, "a"));
