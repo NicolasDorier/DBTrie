@@ -256,21 +256,38 @@ namespace DBTrie.Tests
 			await cache.Write(0, CreateString(5));
 			Assert.Contains(0, cache.pages.Keys);
 			Assert.Single(cache.pages);
+			Assert.Equal(1, cache.PagePool.PageCount);
+			Assert.Equal(1, cache.PagePool.FreePageCount);
+			Assert.Equal(0, cache.PagePool.EvictablePageCount);
 			// We read on page 1
 			await cache.Read(10, 1);
 			Assert.Contains(1, cache.pages.Keys);
 			Assert.Equal(2, cache.pages.Count);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(1, cache.PagePool.EvictablePageCount);
 			// we now write on page 2, page 1 is only read so should be evicted, even though it is most recently used
 			await cache.Write(20, "a");
 			Assert.DoesNotContain(1, cache.pages.Keys);
 			Assert.Contains(0, cache.pages.Keys);
 			Assert.Contains(2, cache.pages.Keys);
-			Assert.Equal(2, cache.pages.Count);
+			Assert.Equal(2, cache.PagePool.PageCount);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(0, cache.PagePool.EvictablePageCount);
 
 			// We write on the 4rd, but because both the 3rd and the 1st page are written, it should throw
 			await Assert.ThrowsAsync<NoMorePageAvailableException>(async () => await cache.Write(30, "a"));
 			await cache.Flush();
+			Assert.Equal(2, cache.PagePool.PageCount);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(2, cache.PagePool.EvictablePageCount);
 			await cache.Write(30, "a");
+			Assert.Equal(2, cache.PagePool.PageCount);
+			Assert.Equal(0, cache.PagePool.FreePageCount);
+			Assert.Equal(1, cache.PagePool.EvictablePageCount);
+			cache.Clear(false);
+			Assert.Equal(0, cache.PagePool.PageCount);
+			Assert.Equal(2, cache.PagePool.FreePageCount);
+			Assert.Equal(0, cache.PagePool.EvictablePageCount);
 		}
 
 		private static string CreateString(int len)

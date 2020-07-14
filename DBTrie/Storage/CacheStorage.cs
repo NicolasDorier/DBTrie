@@ -43,6 +43,7 @@ namespace DBTrie.Storage
 		bool own;
 		bool canCommitAutomatically;
 		PagePool _PagePool;
+		public PagePool PagePool => _PagePool;
 		Func<Page, ValueTask> _EvictedCallback;
 
 		public int PageSize => _PagePool.PageSize;
@@ -115,9 +116,9 @@ namespace DBTrie.Storage
 		private async ValueTask<Page> FetchPage(int p)
 		{
 			var page = await _PagePool.NewPage((int)p);
+			page.EnableEviction();
 			await InnerStorage.Read(p * _PagePool.PageSize, page.Content);
 			pages.Add(p, page);
-			page.CanEvict = true;
 			page.EvictedCallback = _EvictedCallback;
 			return page;
 		}
@@ -147,7 +148,10 @@ namespace DBTrie.Storage
 			input = input.Slice((int)chunkLength);
 			page.WrittenLength = (int)Math.Max(page.WrittenLength, pageOffset + chunkLength);
 			page.WrittenStart = (int)Math.Min(page.WrittenStart, pageOffset);
-			page.CanEvict = canCommitAutomatically;
+			if (canCommitAutomatically)
+				page.EnableEviction();
+			else
+				page.DisableEviction();
 			return input;
 		}
 
@@ -227,7 +231,7 @@ namespace DBTrie.Storage
 			await InnerStorage.Write(page.PageNumber * _PagePool.PageSize, page.Content.Slice(page.WrittenStart, page.WrittenLength));
 			page.WrittenStart = 0;
 			page.WrittenLength = 0;
-			page.CanEvict = true;
+			page.EnableEviction();
 		}
 
 		/// <summary>

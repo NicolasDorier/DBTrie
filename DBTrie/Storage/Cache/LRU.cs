@@ -38,6 +38,11 @@ namespace DBTrie.Storage.Cache
 			return true;
 		}
 
+		public bool Contains(T page)
+		{
+			return hashmap.ContainsKey(page);
+		}
+
 		public void Push(T page)
 		{
 			var node = list.AddFirst(page);

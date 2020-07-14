@@ -17,50 +17,42 @@ namespace DBTrie.Storage.Cache
 			if (maxPageCount != int.MaxValue)
 				lru = new LRU<Page>();
 		}
+		internal HashSet<Page> pages = new HashSet<Page>();
 		internal LRU<Page>? lru;
 		public int PageSize { get; }
-		public int MaxPageCount { get; }
-		public int PageCount { get; internal set; }
+		public int MaxPageCount { get; set; }
+		public int PageCount => pages.Count;
+		public int FreePageCount => MaxPageCount - pages.Count;
+		public int EvictablePageCount
+		{
+			get
+			{
+				if (this.lru is LRU<Page> lru)
+				{
+					return lru.Count;
+				}
+				return 0;
+			}
+		}
 		internal async ValueTask<Page> NewPage(int pageNumber)
 		{
-			if (lru is LRU<Page>)
+			if (lru is LRU<Page> && FreePageCount == 0)
 			{
-				Debug.Assert(lru.Count <= MaxPageCount);
-				if (lru.Count == MaxPageCount)
+				if (lru.TryPop(out var leastUsedPage))
 				{
-					bool noPageToEvict = true;
-					Queue<Page>? backToLRU = null;
-					while (lru.Count > 0)
-					{
-						if (lru.TryPop(out var leastUsedPage))
-						{
-							if (leastUsedPage.CanEvict)
-							{
-								if (leastUsedPage.EvictedCallback is Func<Page, ValueTask> evictCallback)
-									await evictCallback(leastUsedPage);
-								noPageToEvict = false;
-								leastUsedPage.Dispose(true);
-								break;
-							}
-							else
-							{
-								backToLRU ??= new Queue<Page>();
-								backToLRU.Enqueue(leastUsedPage);
-							}
-						}
-					}
-					while (backToLRU is Queue<Page> s && s.TryDequeue(out var cantEvict))
-					{
-						lru.Accessed(cantEvict);
-					}
-					if (noPageToEvict)
-						throw new NoMorePageAvailableException();
+					Debug.Assert(leastUsedPage.CanEvict);
+					if (leastUsedPage.EvictedCallback is Func<Page, ValueTask> evictCallback)
+						await evictCallback(leastUsedPage);
+					leastUsedPage.Dispose();
+				}
+				else
+				{
+					throw new NoMorePageAvailableException();
 				}
 			}
 			var page = new Page(pageNumber, this);
 			page.Accessed();
-			PageCount++;
-			Debug.Assert(lru is LRU<Page> l ? PageCount == l.Count : true);
+			pages.Add(page);
 			return page;
 		}
 	}

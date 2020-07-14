@@ -23,7 +23,25 @@ namespace DBTrie.Storage.Cache
 		private readonly PagePool pool;
 
 		public Memory<byte> Content => _owner.Memory;
-		public bool CanEvict { get; set; }
+		public bool CanEvict { get; private set; }
+
+		public void EnableEviction()
+		{
+			if (CanEvict)
+				return;
+			Debug.Assert(!(this.pool.lru is LRU<Page> lru) || !lru.Contains(this));
+			CanEvict = true;
+			Accessed();
+		}
+		public void DisableEviction()
+		{
+			if (!CanEvict)
+				return;
+			Debug.Assert(!(this.pool.lru is LRU<Page> lru) || lru.Contains(this));
+			CanEvict = false;
+			this.pool.lru?.Remove(this);
+		}
+
 		public Func<Page, ValueTask>? EvictedCallback { get; set; }
 
 		public bool Dirty => WrittenLength != 0;
@@ -31,18 +49,17 @@ namespace DBTrie.Storage.Cache
 		public void Accessed()
 		{
 			Debug.Assert(!disposed);
-			if (this.pool.lru is LRU<Page> lru)
+			if (CanEvict && this.pool.lru is LRU<Page> lru)
 				lru.Accessed(this);
 		}
-		public void Dispose(bool evicted = false)
+		public void Dispose()
 		{
 			if (!disposed)
 			{
 				disposed = true;
 				_owner.Dispose();
-				this.pool.PageCount--;
-				if (!evicted && this.pool.lru is LRU<Page> lru)
-					lru.Remove(this);
+				this.pool.pages.Remove(this);
+				this.pool.lru?.Remove(this);
 			}
 		}
 	}
