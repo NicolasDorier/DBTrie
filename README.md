@@ -164,6 +164,12 @@ If you limit the memory and no page can be evicted (because all pages have been 
 
 We should one day instead evict written pages on a separate file instead of throwing an error.
 
+## Concept
+
+Radix trees are composed of nodes and values. A node can have an internal value or links to other node or values.
+In this example, the word `hi` is stored as an internal value.
+![concept](docs/concept/svg)
+
 ## License
 
 MIT
