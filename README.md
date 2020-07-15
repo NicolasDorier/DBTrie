@@ -175,13 +175,15 @@ You can easily understand why having small keys can have a positive impact on pe
 
 DBTrie is built so that the radix trie is never stored in object form in the memory. Instead pointers are offset into an `IStorage`. (file or cache)
 To implement rollback functionality, we place a cache (`CacheStorage`) between the trie and the file (`FileStorage`).
-If a rollback is done, written page in the cache are refetched from the file.
+If a rollback is done, written page in the cache are refetched from the file. A commit will flush written pages into the file.
 
 A `CacheStorage` works at the page level. If the trie request to read or write memory at some location, the `CacheStorage` will check if the page of this location exists in the cache, and if not, request an empty page from the `PagePool` and fetch the data of the underlying file into the new page.
 
-If the `PagePool` detects that too much page have been asked, it will attempt to evict the least used page from memory and notify the owner of the page (the `CacheStorage`) that this page it granted before is no longer usable.
+If the `PagePool` detects that too much page have been asked, it will attempt to evict the least used page from memory and notify the owner of the page (the `CacheStorage`) that this page it was using before is no longer usable.
 
 A `CacheStorage` will make a page impossible to evict if it has been written to but not flushed to the underlying `FileStorage`. If the `PagePool` can't evict any page when it needs, an error `NoMorePageAvailableException` will be thrown during Insert.
+
+This design allows precise control over memory consumption by configuring the `PagePool` with `DBTrieEngine.ConfigurePagePool`. It also decrease dramatically the number of file system operations, allowing, for most case, to respond to a query without any file read involved.
 
 
 ## License
