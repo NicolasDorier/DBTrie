@@ -1,3 +1,5 @@
+[![NuGet](https://img.shields.io/nuget/v/DBTrie.svg)](https://www.nuget.org/packages/DBTrie)
+
 # DBTrie
 
 This project is a complete rewrite of [DBreeze](https://github.com/hhblaze/DBreeze), which is a managed implementation of a key/value store based on [radix tree](https://en.wikipedia.org/wiki/Radix_tree).
