@@ -168,6 +168,8 @@ We should one day instead evict written pages on a separate file instead of thro
 
 Radix trees are composed of nodes and values. A node can have an internal value or links to other node or values.
 In this example, the word `hi` is stored as an internal value.
+
+
 ![concept](docs/Concept.svg)
 
 ## License
