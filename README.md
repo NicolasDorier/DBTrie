@@ -167,10 +167,22 @@ We should one day instead evict written pages on a separate file instead of thro
 ## Concept
 
 Radix trees are composed of nodes and values. A node can have an internal value or links to other node or values.
-In this example, the word `hi` is stored as an internal value.
+In this example, the word `hi` is stored as an internal value. Each link is annotated by a value which is one byte of the key to be stored.
 
+You can easily understand why having small keys can have a positive impact on performance.
 
 ![concept](docs/Concept.svg)
+
+DBTrie is built so that the radix trie is never stored in object form in the memory. Instead pointers are offset into an `IStorage`. (file or cache)
+To implement rollback functionality, we place a cache (`CacheStorage`) between the trie and the file (`FileStorage`).
+If a rollback is done, written page in the cache are refetched from the file.
+
+A `CacheStorage` works at the page level. If the trie request to read or write memory at some location, the `CacheStorage` will check if the page of this location exists in the cache, and if not, request an empty page from the `PagePool` and fetch the data of the underlying file into the new page.
+
+If the `PagePool` detects that too much page have been asked, it will attempt to evict the least used page from memory and notify the owner of the page (the `CacheStorage`) that this page it granted before is no longer usable.
+
+A `CacheStorage` will make a page impossible to evict if it has been written to but not flushed to the underlying `FileStorage`. If the `PagePool` can't evict any page when it needs, an error `NoMorePageAvailableException` will be thrown during Insert.
+
 
 ## License
 
