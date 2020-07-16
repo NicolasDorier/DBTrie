@@ -17,14 +17,13 @@
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
   <PropertyGroup>
-    <Version>1.0.35</Version>
+    <Version>1.0.36</Version>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DebugType>portable</DebugType>
     <Optimize>true</Optimize>
-    <DocumentationFile>bin\Release\DBTrie.XML</DocumentationFile>
     <NoWarn>1591;1573;1572;1584;1570;3021</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
