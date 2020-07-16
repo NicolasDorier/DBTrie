@@ -629,13 +629,25 @@ namespace DBTrie.Tests
 				var trie = await table.GetTrie();
 				var lengthBefore = ((CacheStorage)trie.Storage).Length;
 				Assert.Equal(lengthBefore, ((CacheStorage)trie.Storage).InnerStorage.Length);
+				var allRows = await table.Enumerate().ToArrayAsync();
+				var lastRowBefore = (LTrieValue)allRows.OrderByDescending(a => ((LTrieValue)a).Pointer).First();
+				allRows.DisposeAll();
+				var lastValueBefore = new byte[lastRowBefore.ValueLength];
+				(await lastRowBefore.ReadValue()).CopyTo(lastValueBefore);
 				var saving = await table.Defragment();
 				Assert.NotEqual(0, saving);
 				Assert.Equal(0, await table.Defragment());
 				trie = await table.GetTrie();
 				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).InnerStorage.Length);
 				Assert.Equal(lengthBefore - saving, ((CacheStorage)trie.Storage).Length);
-				Assert.Equal(countBefore, (await table.Enumerate().ToArrayAsync()).Length);
+				allRows = await table.Enumerate().ToArrayAsync();
+				var lastRow = (LTrieValue)allRows.OrderByDescending(a => ((LTrieValue)a).Pointer).First();
+				var lastValue = new byte[lastRow.ValueLength];
+				(await lastRow.ReadValue()).CopyTo(lastValue);
+				Assert.Equal(countBefore, allRows.Length);
+				Assert.True(lastRow.ValuePointer + lastRow.ValueLength <= ((CacheStorage)trie.Storage).Length);
+				Assert.True(lastValue.SequenceEqual(lastValueBefore));
+				allRows.DisposeAll();
 			}
 			await using (var engine = await CreateEngine(false))
 			{

@@ -182,7 +182,7 @@ namespace DBTrie.TrieModel
 				}
 			}
 			NodeCache?.Clear();
-			int totalSaved = 0;
+			long totalSize = -1;
 			int nextOffset = Sizes.RootSize;
 			// We have a list of all memory region in use (skipping root)
 			var owner = MemoryPool.Rent(256);
@@ -209,16 +209,19 @@ namespace DBTrie.TrieModel
 							childmem.PointedBy -= gap;
 						}
 					}
-					totalSaved = gap - totalSaved;
 				}
 				else if (gap != 0)
 					throw new InvalidOperationException("Bug in DBTrie during garbage collection");
 				nextOffset += region.Size;
+				totalSize = region.Pointer + region.Size;
 			}
 			owner.Dispose();
 			RootPointer = await StorageHelper.ReadPointer(2);
-			await Storage.Resize(Storage.Length - totalSaved);
-			return totalSaved;
+			if (totalSize == -1)
+				return 0;
+			var totalSaved = Storage.Length - totalSize;
+			await Storage.Resize(totalSize);
+			return (int)totalSaved;
 		}
 
 		internal async ValueTask<bool> TryOverwriteValue(Link link, ReadOnlyMemory<byte> value)
