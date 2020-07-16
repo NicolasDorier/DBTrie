@@ -131,6 +131,7 @@ namespace DBTrie.TrieModel
 
 		public async ValueTask<int> Defragment(CancellationToken cancellationToken = default)
 		{
+			AssertNotEnumerating();
 			var usedMemories = new List<UsedMemory>();
 			usedMemories.Add(new UsedMemory() { Pointer = 0, Size = Sizes.RootSize, PointingTo = new List<UsedMemory>() });
 			var nodesToVisit = new Stack<(long NodePointer, long PointedFrom, UsedMemory ParentNode)>();
@@ -499,6 +500,8 @@ namespace DBTrie.TrieModel
 			}
 		}
 		bool enumerating = false;
+		private EnumerationOrder enumeratingOrder;
+
 		void AssertNotEnumerating()
 		{
 			if (enumerating)
@@ -510,9 +513,11 @@ namespace DBTrie.TrieModel
 		}
 		internal async IAsyncEnumerable<LTrieValue> EnumerateStartsWith(ReadOnlyMemory<byte> startWithKey, EnumerationOrder order)
 		{
+			AssertNotEnumerating();
 			try
 			{
 				enumerating = true;
+				enumeratingOrder = order;
 				var res = await FindBestMatch(startWithKey);
 				// In this case, we don't have an exact match, and no children either
 				if (res.ValueLink is null && res.MissingValue is byte)
@@ -595,7 +600,8 @@ namespace DBTrie.TrieModel
 		}
 		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
 		{
-			AssertNotEnumerating();
+			if (enumerating && enumeratingOrder == EnumerationOrder.Ordered)
+				throw new InvalidOperationException("Impossible to delete value while enumerating with EnumerationOrder.Ordered");
 			var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return false;

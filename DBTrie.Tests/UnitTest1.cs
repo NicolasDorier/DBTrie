@@ -618,6 +618,53 @@ namespace DBTrie.Tests
 		}
 
 		[Fact]
+		public async Task CanDeleteWhileEnumerating()
+		{
+			Random rand = new Random(0);
+			for (int i = 0; i < 30; i++)
+			{
+				await using (var engine = await CreateEmptyEngine())
+				{
+					using var tx = await engine.OpenTransaction();
+					var table = tx.GetTable("Test");
+					var keys = new string[] { "hel", "hell", "hello", "hella" };
+					rand.Shuffle(keys);
+					logs.WriteLine("Inserting " + string.Join(',', keys));
+					foreach (var key in keys)
+						await table.Insert(key, key);
+					rand.Shuffle(keys);
+					logs.WriteLine("Deleting " + string.Join(',', keys));
+					var remainingKeys = new HashSet<string>();
+					for (int o = 0; o < keys.Length; o++)
+					{
+						logs.WriteLine("Iterate on remaining " + (keys.Length - o) + " values");
+						var iterated = new HashSet<string>();
+						await foreach(var row in table.Enumerate(order: EnumerationOrder.Unordered))
+						{
+							var rowKey = await row.ReadValueString();
+							logs.WriteLine("Iterate " + rowKey);
+							iterated.Add(rowKey);
+							using (row)
+							{
+								if (rowKey == keys[o])
+								{
+									logs.WriteLine("Delete " + rowKey);
+									await table.Delete(row.Key);
+									remainingKeys.Remove(rowKey);
+								}
+							}
+						}
+						Assert.Equal(keys.Length - o, iterated.Count);
+						foreach (var key in keys.Skip(o))
+						{
+							Assert.Contains(key, iterated);
+						}
+					}
+				}
+			}
+		}
+
+		[Fact]
 		public async Task CanDefragment()
 		{
 			int countBefore = 0;
