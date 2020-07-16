@@ -500,7 +500,6 @@ namespace DBTrie.TrieModel
 			}
 		}
 		bool enumerating = false;
-		private EnumerationOrder enumeratingOrder;
 
 		void AssertNotEnumerating()
 		{
@@ -517,7 +516,6 @@ namespace DBTrie.TrieModel
 			try
 			{
 				enumerating = true;
-				enumeratingOrder = order;
 				var res = await FindBestMatch(startWithKey);
 				// In this case, we don't have an exact match, and no children either
 				if (res.ValueLink is null && res.MissingValue is byte)
@@ -600,8 +598,7 @@ namespace DBTrie.TrieModel
 		}
 		public async ValueTask<bool> DeleteRow(ReadOnlyMemory<byte> key)
 		{
-			if (enumerating && enumeratingOrder == EnumerationOrder.Ordered)
-				throw new InvalidOperationException("Impossible to delete value while enumerating with EnumerationOrder.Ordered");
+			AssertNotEnumerating();
 			var res = await FindBestMatch(key);
 			if (res.ValueLink is null)
 				return false;
