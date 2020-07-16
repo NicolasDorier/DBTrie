@@ -270,7 +270,7 @@ namespace DBTrie
 			}
 		}
 
-		internal PagePool PagePool => _LocalPagePool ?? GlobalPagePool;
+		public PagePool PagePool => _LocalPagePool ?? GlobalPagePool;
 
 		internal PagePool GlobalPagePool
 		{
