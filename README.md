@@ -41,7 +41,7 @@ static async Task Main(string args)
 	Directory.CreateDirectory("Db");
 	await using (var engine = await DBTrieEngine.OpenFromFolder("Db"))
 	{
-		var tx = await engine.OpenTransaction();
+		using var tx = await engine.OpenTransaction();
 		var table = tx.GetTable("MyTable");
 		await table.Insert("MyKey", "MyValue");
 		await tx.Commit();
@@ -150,6 +150,7 @@ You should make sure that the memory used by the number of inserts in one commit
 
 ## Best practices
 
+* Do not attempt to use a single `Transaction` in a concurrent way.
 * Use small keys. The bigger the key, the more resource consuming are lookups.
 * The API allows the use of `[ReadOnly]Memory<byte>` extensively to limit allocations. If you are writting performance sensitive code, consider using those.
 * Think of disposing the `IRow` you get from a table. This decrease the pressure on the garbage collector.
