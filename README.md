@@ -186,6 +186,24 @@ A `CacheStorage` will make a page impossible to evict if it has been written to 
 
 This design allows precise control over memory consumption by configuring the `PagePool` with `DBTrieEngine.ConfigurePagePool`. It also decrease dramatically the number of file system operations, allowing, for most case, to respond to a query without any file read involved.
 
+## Bench
+
+Comparing perf with other databases:
+- Trie
+- Leveldb
+- Litedb
+
+|        Method |        Mean |     Error |    StdDev |      Median | Rank |   Gen 0 |   Gen 1 | Gen 2 | Allocated |
+|-------------- |------------:|----------:|----------:|------------:|-----:|--------:|--------:|------:|----------:|
+|    TrieInsert |   566.90 us | 31.864 us |  91.93 us |   577.14 us |    4 | 21.4844 |  0.4883 |     - | 178.29 KB |
+| LeveldbInsert |    34.27 us |  7.714 us |  22.74 us |    24.98 us |    1 |  0.2441 |  0.0610 |     - |    2.1 KB |
+|  LitedbInsert |   928.87 us | 31.204 us |  79.99 us |   922.92 us |    6 | 25.3906 |  6.8359 |     - | 211.83 KB |
+|       TrieGet |   215.90 us |  4.292 us |  11.46 us |   213.91 us |    3 | 21.4844 |  0.4883 |     - | 176.67 KB |
+|    LeveldbGet |    76.02 us |  4.007 us |  11.62 us |    71.58 us |    2 |  0.2441 |       - |     - |   2.73 KB |
+|     LitedbGet | 1,154.06 us | 26.995 us |  77.45 us | 1,134.22 us |    7 | 54.6875 |  7.8125 |     - | 451.25 KB |
+|    TrieDelete |   634.11 us | 31.253 us |  90.67 us |   634.57 us |    5 | 28.3203 |  0.9766 |     - | 234.13 KB |
+| LeveldbDelete |    31.78 us |  4.744 us |  13.99 us |    32.01 us |    1 |  0.2441 |  0.0610 |     - |    2.1 KB |
+|  LitedbDelete | 2,839.57 us | 56.511 us | 111.55 us | 2,837.17 us |    8 | 42.9688 | 11.7188 |     - | 379.89 KB |
 
 ## License
 
