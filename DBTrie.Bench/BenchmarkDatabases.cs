@@ -38,7 +38,8 @@ namespace DBTrie.Bench
         [GlobalSetup]
         public void Setup()
         {
-            folder = @"C:\BenchData";
+            folder = @"BenchData";
+            Directory.CreateDirectory($@"BenchData");
             Directory.CreateDirectory($@"{folder}\trie");
             trie = DBTrieEngine.OpenFromFolder($@"{folder}\trie").Result;
             ldb = new DB(new Options { CreateIfMissing = true }, $@"{folder}\ldb");
