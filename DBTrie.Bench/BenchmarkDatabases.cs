@@ -102,7 +102,8 @@ namespace DBTrie.Bench
 		{
 			for (int i = 0; i < 10; i++)
 			{
-				await tbl.Get(BitConverter.GetBytes(trieGetCount++));
+				var row = await tbl.Get(BitConverter.GetBytes(trieGetCount++));
+				row?.Dispose();
 			}
 		}
 
