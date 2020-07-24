@@ -188,10 +188,10 @@ This design allows precise control over memory consumption by configuring the `P
 
 ## Bench
 
-Comparing perf with other databases:
-- Trie
-- Leveldb
-- Litedb
+Comparing perf with other databases: (by batch of 10 operations)
+* Trie
+* Leveldb
+* Litedb
 
 |        Method |        Mean |     Error |    StdDev |      Median | Rank |   Gen 0 |   Gen 1 | Gen 2 | Allocated |
 |-------------- |------------:|----------:|----------:|------------:|-----:|--------:|--------:|------:|----------:|
