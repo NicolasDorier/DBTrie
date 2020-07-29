@@ -39,27 +39,27 @@ namespace DBTrie.TrieModel
 			return OpenFromSpan(storage, mem.Span, memoryPool);
 		}
 
-		public async ValueTask<bool> SetValue(string key, string value)
+		public async ValueTask<bool> SetValue(string key, string value, bool replace = true)
 		{
 			var keyCount = Encoding.UTF8.GetByteCount(key);
 			var valueCount = Encoding.UTF8.GetByteCount(value);
 			using var owner = MemoryPool.Rent(keyCount + valueCount);
 			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
 			Encoding.UTF8.GetBytes(value, owner.Memory.Span.Slice(keyCount));
-			return await SetValue(owner.Memory.Slice(0, keyCount), owner.Memory.Slice(keyCount, valueCount));
+			return await SetValue(owner.Memory.Slice(0, keyCount), owner.Memory.Slice(keyCount, valueCount), replace);
 		}
-		public async ValueTask<bool> SetValue(string key, ReadOnlyMemory<byte> value)
+		public async ValueTask<bool> SetValue(string key, ReadOnlyMemory<byte> value, bool replace = true)
 		{
 			var keyCount = Encoding.UTF8.GetByteCount(key);
 			using var owner = MemoryPool.Rent(keyCount);
 			Encoding.UTF8.GetBytes(key, owner.Memory.Span);
-			return await SetValue(owner.Memory.Slice(0, keyCount), value);
+			return await SetValue(owner.Memory.Slice(0, keyCount), value, replace);
 		}
-		internal async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ulong value)
+		internal async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ulong value, bool replace = true)
 		{
 			using var owner = MemoryPool.Rent(8);
 			owner.Memory.Span.ToBigEndian(value);
-			return await SetValue(key, owner.Memory.Slice(0, 8));
+			return await SetValue(key, owner.Memory.Slice(0, 8), replace);
 		}
 
 		public static LTrie OpenFromSpan(IStorage storage, ReadOnlySpan<byte> span, MemoryPool<byte>? memoryPool = null)
@@ -384,7 +384,7 @@ namespace DBTrie.TrieModel
 			return await val.ReadValueString();
 		}
 
-		public async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		public async ValueTask<bool> SetValue(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value, bool replace = true)
 		{
 			AssertNotEnumerating();
 			var res = await FindBestMatch(key);
@@ -415,8 +415,12 @@ namespace DBTrie.TrieModel
 			}
 			else
 			{
+				if (!replace)
+				{
+					increaseRecord = false;
+				}
 				// we replace the internal value
-				if (res.BestNode.MinKeyLength == key.Length)
+				else if (res.BestNode.MinKeyLength == key.Length)
 				{
 					increaseRecord = false;
 					await res.BestNode.SetInternalValue(key, value);

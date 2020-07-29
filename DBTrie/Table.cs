@@ -87,23 +87,44 @@ namespace DBTrie
 				return;
 			await (await this.GetCacheStorage()).ResizeInner();
 		}
-		public async ValueTask<bool> Insert(string key, string value)
+		/// <summary>
+		/// Insert a new value for the key
+		/// </summary>
+		/// <param name="key">The key</param>
+		/// <param name="value">The value</param>
+		/// <param name="replace">If the key already exists, should we replace with the new value?</param>
+		/// <returns>True if the key was not existing before this operation.</returns>
+		public async ValueTask<bool> Insert(string key, string value, bool replace = true)
 		{
 			if (key == null)
 				throw new ArgumentNullException(nameof(key));
 			if (value == null)
 				throw new ArgumentNullException(nameof(value));
-			return await (await GetTrie()).SetValue(key, value);
+			return await (await GetTrie()).SetValue(key, value, replace);
 		}
-		public async ValueTask<bool> Insert(string key, ReadOnlyMemory<byte> value)
+		/// <summary>
+		/// Insert a new value for the key
+		/// </summary>
+		/// <param name="key">The key</param>
+		/// <param name="value">The value</param>
+		/// <param name="replace">If the key already exists, should we replace with the new value?</param>
+		/// <returns>True if the key was not existing before this operation.</returns>
+		public async ValueTask<bool> Insert(string key, ReadOnlyMemory<byte> value, bool replace = true)
 		{
 			if (key == null)
 				throw new ArgumentNullException(nameof(key));
-			return await (await GetTrie()).SetValue(key, value);
+			return await (await GetTrie()).SetValue(key, value, replace);
 		}
-		public async ValueTask<bool> Insert(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value)
+		/// <summary>
+		/// Insert a new value for the key
+		/// </summary>
+		/// <param name="key">The key</param>
+		/// <param name="value">The value</param>
+		/// <param name="replace">If the key already exists, should we replace with the new value?</param>
+		/// <returns>True if the key was not existing before this operation.</returns>
+		public async ValueTask<bool> Insert(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value, bool replace = true)
 		{
-			return await (await GetTrie()).SetValue(key, value);
+			return await (await GetTrie()).SetValue(key, value, replace);
 		}
 
 		public async ValueTask<IRow?> Get(string key)

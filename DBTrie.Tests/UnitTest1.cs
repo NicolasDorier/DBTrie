@@ -857,9 +857,11 @@ namespace DBTrie.Tests
 					Assert.Equal(countBefore + 3, trie.RecordCount);
 
 					Assert.Null(await trie.GetValue("k"));
-					await trie.SetValue("k", "k-r1");
+					Assert.True(await trie.SetValue("k", "k-r1"));
 					Assert.Equal("k-r1", await trie.GetValueString("k"));
-					await trie.SetValue("k", "k-r2");
+					Assert.False(await trie.SetValue("k", "k-r2"));
+					Assert.Equal("k-r2", await trie.GetValueString("k"));
+					Assert.False(await trie.SetValue("k", "k-r3", false));
 					Assert.Equal("k-r2", await trie.GetValueString("k"));
 					Assert.Equal(countBefore + 4, trie.RecordCount);
 
