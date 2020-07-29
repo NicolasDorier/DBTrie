@@ -415,15 +415,12 @@ namespace DBTrie.TrieModel
 			}
 			else
 			{
-				if (!replace)
-				{
-					increaseRecord = false;
-				}
 				// we replace the internal value
-				else if (res.BestNode.MinKeyLength == key.Length)
+				if (res.BestNode.MinKeyLength == key.Length)
 				{
 					increaseRecord = false;
-					await res.BestNode.SetInternalValue(key, value);
+					if (replace)
+						await res.BestNode.SetInternalValue(key, value);
 				}
 				else
 				{
@@ -433,7 +430,8 @@ namespace DBTrie.TrieModel
 					if (valueKey.Span.SequenceEqual(key.Span))
 					{
 						increaseRecord = false;
-						await res.BestNode.SetValue(res.ValueLink.Label, key, value);
+						if (replace)
+							await res.BestNode.SetValue(res.ValueLink.Label, key, value);
 					}
 					else
 					{
