@@ -1,172 +1,210 @@
 ﻿using BenchmarkDotNet.Attributes;
-using DBTrie.Storage;
 using DBTrie.Tests;
-using DBTrie.TrieModel;
 using LevelDB;
 using LiteDB;
+using rdb = RocksDbSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace DBTrie.Bench
 {
-	[MarkdownExporterAttribute.GitHub]
-	[RankColumn, MemoryDiagnoser]
-	public class BenchmarkDatabases
-	{
-		private string folder;
-		private DBTrieEngine trie;
-		private DB ldb;
-		private LiteDatabase litedb;
-		private ILiteCollection<LiteDbEntity> litedbCol;
-		private Transaction trx;
-		private Table tbl;
-		private int trieInsertCount = 0;
-		private int ldbInsertCount = 0;
-		private int litedbInsertCount = 0;
-		private int trieGetCount = 0;
-		private int ldbGetCount = 0;
-		private int litedbGetCount = 0;
-		private int trieDeleteCount = 0;
-		private int ldbDeleteCount = 0;
-		private int litedbDeleteCount = 0;
+    [MarkdownExporterAttribute.GitHub]
+    [RankColumn, MemoryDiagnoser]
+    public class BenchmarkDatabases
+    {
+        private string folder;
+        private DBTrieEngine trie;
+        private DB ldb;
+        private LiteDatabase litedb;
+        private ILiteCollection<LiteDbEntity> litedbCol;
+        private Transaction trx;
+        private Table tbl;
+        private int trieInsertCount = 0;
+        private int ldbInsertCount = 0;
+        private int litedbInsertCount = 0;
+        private int trieGetCount = 0;
+        private int ldbGetCount = 0;
+        private int litedbGetCount = 0;
+        private int trieDeleteCount = 0;
+        private int ldbDeleteCount = 0;
+        private int litedbDeleteCount = 0;
+        private rdb.RocksDb rocksdb;
 
-		private byte[] data = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        private byte[] data = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
-		[GlobalSetup]
-		public void Setup()
-		{
-			folder = @"BenchData";
-			Directory.CreateDirectory($@"BenchData");
-			Directory.CreateDirectory($@"{folder}\trie");
-			trie = DBTrieEngine.OpenFromFolder($@"{folder}\trie").Result;
-			ldb = new DB(new Options { CreateIfMissing = true }, $@"{folder}\ldb");
-			Directory.CreateDirectory($@"{folder}\litedb");
-			litedb = new LiteDatabase(new ConnectionString() { Filename = $@"{folder}\litedb\db" });
-			this.litedbCol = litedb.GetCollection<LiteDbEntity>("tbl");
-			trx = trie.OpenTransaction().Result;
-			tbl = trx.GetTable("tbl");
-		}
+        [GlobalSetup]
+        public void Setup()
+        {
+            folder = @"BenchData";
+            Directory.CreateDirectory($@"BenchData");
+            Directory.CreateDirectory($@"{folder}\trie");
+            trie = DBTrieEngine.OpenFromFolder($@"{folder}\trie").Result;
+            ldb = new DB(new Options { CreateIfMissing = true }, $@"{folder}\ldb");
+            Directory.CreateDirectory($@"{folder}\litedb");
+            litedb = new LiteDatabase(new ConnectionString() { Filename = $@"{folder}\litedb\db" });
+            this.litedbCol = litedb.GetCollection<LiteDbEntity>("tbl");
+            trx = trie.OpenTransaction().Result;
+            tbl = trx.GetTable("tbl");
+            rocksdb = rdb.RocksDb.Open(new rdb.DbOptions().SetCreateIfMissing(true), $@"{folder}\rocksdb");
+        }
 
-		[GlobalCleanup]
-		public async Task Cleanup()
-		{
-			trx.Dispose();
-			await trie.DisposeAsync();
-			ldb.Dispose();
-			litedb.Dispose();
-		}
+        [GlobalCleanup]
+        public async Task Cleanup()
+        {
+            trx.Dispose();
+            await trie.DisposeAsync();
+            ldb.Dispose();
+            litedb.Dispose();
+            rocksdb.Dispose();
+        }
 
-		[Benchmark]
-		public async Task TrieInsert()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				await tbl.Insert(BitConverter.GetBytes(trieInsertCount++), data);
-			}
-			await tbl.Commit();
-		}
+        [Benchmark]
+        public async Task TrieInsert()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                await tbl.Insert(BitConverter.GetBytes(trieInsertCount++), data);
+            }
+            await tbl.Commit();
+        }
 
-		[Benchmark]
-		public void LeveldbInsert()
-		{
-			using (var batch = new WriteBatch())
-			{
-				for (int i = 0; i < 10; i++)
-				{
-					batch.Put(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbInsertCount++)).ToArray(), data);
-				}
+        [Benchmark]
+        public void LeveldbInsert()
+        {
+            using (var batch = new WriteBatch())
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    batch.Put(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbInsertCount++)).ToArray(), data);
+                }
 
-				ldb.Write(batch);
-			}
-		}
+                ldb.Write(batch);
+            }
+        }
 
-		[Benchmark]
-		public void LitedbInsert()
-		{
-			var list = new List<LiteDbEntity>();
+        [Benchmark]
+        public void RocksdbInsert()
+        {
+            using (var batch = new rdb.WriteBatch())
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    batch.Put(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbInsertCount++)).ToArray(), data);
+                }
 
-			for (int i = 0; i < 10; i++)
-			{
-				list.Add(new LiteDbEntity { Table = 1, Key = BitConverter.GetBytes(litedbInsertCount++), Value = data });
-			}
+                rocksdb.Write(batch);
+            }
+        }
 
-			litedbCol.InsertBulk(list);
-		}
+        [Benchmark]
+        public void LitedbInsert()
+        {
+            var list = new List<LiteDbEntity>();
 
-		[Benchmark]
-		public async Task TrieGet()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				var row = await tbl.Get(BitConverter.GetBytes(trieGetCount++));
-				row?.Dispose();
-			}
-		}
+            for (int i = 0; i < 10; i++)
+            {
+                list.Add(new LiteDbEntity { Table = 1, Key = BitConverter.GetBytes(litedbInsertCount++), Value = data });
+            }
 
-		[Benchmark]
-		public void LeveldbGet()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				ldb.Get(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbGetCount++)).ToArray());
-			}
-		}
+            litedbCol.InsertBulk(list);
+        }
 
-		[Benchmark]
-		public void LitedbGet()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				litedbCol.FindById(BitConverter.GetBytes(litedbGetCount++));
-			}
-		}
+        [Benchmark]
+        public async Task TrieGet()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                var row = await tbl.Get(BitConverter.GetBytes(trieGetCount++));
+                row?.Dispose();
+            }
+        }
 
-		[Benchmark]
-		public async Task TrieDelete()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				await tbl.Delete(BitConverter.GetBytes(trieDeleteCount++));
-			}
+        [Benchmark]
+        public void LeveldbGet()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                ldb.Get(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbGetCount++)).ToArray());
+            }
+        }
 
-			await tbl.Commit();
-		}
+        [Benchmark]
+        public void RocksdbGet()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                rocksdb.Get(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbGetCount++)).ToArray());
+            }
+        }
 
-		[Benchmark]
-		public void LeveldbDelete()
-		{
-			using (var batch = new WriteBatch())
-			{
-				for (int i = 0; i < 10; i++)
-				{
-					batch.Delete(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbDeleteCount++)).ToArray());
-				}
+        [Benchmark]
+        public void LitedbGet()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                litedbCol.FindById(BitConverter.GetBytes(litedbGetCount++));
+            }
+        }
 
-				ldb.Write(batch);
-			}
-		}
+        [Benchmark]
+        public async Task TrieDelete()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                await tbl.Delete(BitConverter.GetBytes(trieDeleteCount++));
+            }
 
-		[Benchmark]
-		public void LitedbDelete()
-		{
-			for (int i = 0; i < 10; i++)
-			{
-				litedbCol.Delete(BitConverter.GetBytes(litedbDeleteCount++));
-			}
-		}
-	}
+            await tbl.Commit();
+        }
 
-	public class LiteDbEntity
-	{
-		public int Table { get; set; }
+        [Benchmark]
+        public void LeveldbDelete()
+        {
+            using (var batch = new WriteBatch())
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    batch.Delete(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbDeleteCount++)).ToArray());
+                }
 
-		[BsonId]
-		public byte[] Key { get; set; }
+                ldb.Write(batch);
+            }
+        }
 
-		public byte[] Value { get; set; }
-	}
+        [Benchmark]
+        public void RocksdbDelete()
+        {
+            using (var batch = new rdb.WriteBatch())
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    batch.Delete(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbDeleteCount++)).ToArray());
+                }
+
+                rocksdb.Write(batch);
+            }
+        }
+
+        [Benchmark]
+        public void LitedbDelete()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                litedbCol.Delete(BitConverter.GetBytes(litedbDeleteCount++));
+            }
+        }
+    }
+
+    public class LiteDbEntity
+    {
+        public int Table { get; set; }
+
+        [BsonId]
+        public byte[] Key { get; set; }
+
+        public byte[] Value { get; set; }
+    }
 }
