@@ -1,14 +1,12 @@
 ﻿using BenchmarkDotNet.Attributes;
-using DBTrie.Storage;
 using DBTrie.Tests;
-using DBTrie.TrieModel;
 using LevelDB;
 using LiteDB;
+using rdb = RocksDbSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace DBTrie.Bench
@@ -33,6 +31,7 @@ namespace DBTrie.Bench
 		private int trieDeleteCount = 0;
 		private int ldbDeleteCount = 0;
 		private int litedbDeleteCount = 0;
+		private rdb.RocksDb rocksdb;
 
 		private byte[] data = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
@@ -49,6 +48,7 @@ namespace DBTrie.Bench
 			this.litedbCol = litedb.GetCollection<LiteDbEntity>("tbl");
 			trx = trie.OpenTransaction().Result;
 			tbl = trx.GetTable("tbl");
+			rocksdb = rdb.RocksDb.Open(new rdb.DbOptions().SetCreateIfMissing(true), $@"{folder}\rocksdb");
 		}
 
 		[GlobalCleanup]
@@ -58,6 +58,7 @@ namespace DBTrie.Bench
 			await trie.DisposeAsync();
 			ldb.Dispose();
 			litedb.Dispose();
+			rocksdb.Dispose();
 		}
 
 		[Benchmark]
@@ -81,6 +82,20 @@ namespace DBTrie.Bench
 				}
 
 				ldb.Write(batch);
+			}
+		}
+
+		[Benchmark]
+		public void RocksdbInsert()
+		{
+			using (var batch = new rdb.WriteBatch())
+			{
+				for (int i = 0; i < 10; i++)
+				{
+					batch.Put(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbInsertCount++)).ToArray(), data);
+				}
+
+				rocksdb.Write(batch);
 			}
 		}
 
@@ -117,6 +132,15 @@ namespace DBTrie.Bench
 		}
 
 		[Benchmark]
+		public void RocksdbGet()
+		{
+			for (int i = 0; i < 10; i++)
+			{
+				rocksdb.Get(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbGetCount++)).ToArray());
+			}
+		}
+
+		[Benchmark]
 		public void LitedbGet()
 		{
 			for (int i = 0; i < 10; i++)
@@ -147,6 +171,20 @@ namespace DBTrie.Bench
 				}
 
 				ldb.Write(batch);
+			}
+		}
+
+		[Benchmark]
+		public void RocksdbDelete()
+		{
+			using (var batch = new rdb.WriteBatch())
+			{
+				for (int i = 0; i < 10; i++)
+				{
+					batch.Delete(new byte[] { 1 }.Concat(BitConverter.GetBytes(ldbDeleteCount++)).ToArray());
+				}
+
+				rocksdb.Write(batch);
 			}
 		}
 
