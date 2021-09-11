@@ -117,7 +117,7 @@ namespace DBTrie.Storage
 		{
 			var page = await _PagePool.NewPage((int)p);
 			page.EnableEviction();
-			await InnerStorage.Read(p * _PagePool.PageSize, page.Content);
+			await InnerStorage.Read((long)p * _PagePool.PageSize, page.Content);
 			pages.Add(p, page);
 			page.EvictedCallback = _EvictedCallback;
 			return page;
@@ -174,7 +174,7 @@ namespace DBTrie.Storage
 					_LengthChanged = true;
 					var oldSize = _Length;
 					_Length = value;
-					_LastPage = (int)Math.DivRem((int)value, _PagePool.PageSize, out _LastPageLength);
+					_LastPage = (int)Math.DivRem(value, _PagePool.PageSize, out _LastPageLength);
 					if (_LastPageLength == 0)
 					{
 						_LastPage--;
@@ -228,7 +228,7 @@ namespace DBTrie.Storage
 
 		async ValueTask FlushPage(Page page)
 		{
-			await InnerStorage.Write(page.PageNumber * _PagePool.PageSize, page.Content.Slice(page.WrittenStart, page.WrittenLength));
+			await InnerStorage.Write((long)page.PageNumber * _PagePool.PageSize, page.Content.Slice(page.WrittenStart, page.WrittenLength));
 			page.WrittenStart = 0;
 			page.WrittenLength = 0;
 			page.EnableEviction();

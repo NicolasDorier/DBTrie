@@ -184,13 +184,13 @@ namespace DBTrie.TrieModel
 			}
 			NodeCache?.Clear();
 			long totalSize = -1;
-			int nextOffset = Sizes.RootSize;
+			long nextOffset = Sizes.RootSize;
 			// We have a list of all memory region in use (skipping root)
 			var owner = MemoryPool.Rent(256);
 			foreach (var region in usedMemories.OrderBy(u => u.Pointer).Skip(1))
 			{
 				// We can't cancel mid-way
-				var gap = (int)(region.Pointer - nextOffset);
+				var gap = region.Pointer - nextOffset;
 				if (gap > 0)
 				{
 					if (owner.Memory.Span.Length < region.Size)
